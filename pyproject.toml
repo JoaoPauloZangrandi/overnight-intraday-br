@@ -1,0 +1,30 @@
+[project]
+name = "overnight-intraday-br"
+version = "0.1.0"
+description = "Retornos overnight vs intraday na B3: a anomalia de Knuteson testada no Brasil"
+readme = "README.md"
+authors = [
+    { name = "joao" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "overnight_br"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
