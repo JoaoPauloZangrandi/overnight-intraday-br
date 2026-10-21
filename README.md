@@ -28,6 +28,24 @@ USIM5: **+153.866.610%** de noite e **−99,9996%** de dia, em 27 anos.
 - Resultados completos: [`docs/resultados_passo1.md`](docs/resultados_passo1.md)
 - Como os preços foram tratados, e por quê: [`docs/tratamento_dos_precos.md`](docs/tratamento_dos_precos.md)
 
+## E dá para um fundo ganhar dinheiro com isso? Não
+
+Backtest com as 30 ações mais líquidas de hoje, nos últimos 5 anos, executando nos leilões e
+pagando custos reais (tarifa oficial de day trade da B3, corretagem e impacto):
+
+| | Ibovespa | CDI | Overnight comprado, bruto | Overnight comprado, com custo |
+|---|---|---|---|---|
+| Retorno ao ano | 14,0% | 12,7% | 16,6% | **−8,9%** |
+| Volatilidade ao ano | 18,3% | 0,1% | 9,9% | 9,9% |
+| Sharpe (sobre o CDI) | 0,15 | — | 0,39 | −2,12 |
+| Máximo drawdown | −21,0% | 0% | −10,4% | −45,7% |
+
+Antes do custo, a estratégia bate o Ibovespa com metade do risco. Depois do custo, não: para
+empatar com o CDI, o custo total teria de ser 0,77 bp por lado, e só a tarifa da B3 já é de 1,15
+a 2,21 bp. Detalhes, métricas e onde o efeito ainda aparece: [`docs/backtest.md`](docs/backtest.md).
+
+![backtest](results/backtest_curvas.png)
+
 ## A conta
 
 Para cada ação e pregão, com os preços crus do COTAHIST divididos pela unidade de cotação:
@@ -46,7 +64,7 @@ na data-ex. O motivo está em [`docs/tratamento_dos_precos.md`](docs/tratamento_
 | 1. Revisão de literatura | Concluída: [`docs/literature_review.md`](docs/literature_review.md). Conclusão: **testado só parcialmente no Brasil** |
 | 1b. O caso Micron (Knuteson, ex-D. E. Shaw) | Pesquisado: [`docs/knuteson_micron.md`](docs/knuteson_micron.md) |
 | Passo 1. Overnight vs intraday, 100 mais líquidas | **Concluído**: [`docs/resultados_passo1.md`](docs/resultados_passo1.md) |
-| Próximos | CDI na conta, custos e leilões, noites comuns vs fins de semana |
+| Passo 2. Backtest de um fundo, com custos reais | **Concluído**: [`docs/backtest.md`](docs/backtest.md) |
 
 ## Dados
 
@@ -55,15 +73,19 @@ cotação e número de distribuição de todo papel que negociou desde 1995, inc
 da bolsa. Nenhuma fonte de eventos ou preço ajustado entra na conta. Yahoo e o gabarito de
 eventos do quantbr serviram só para validar (ver o tratamento dos preços, item 9).
 
+O backtest usa também o CDI do Banco Central (SGS, série 12) e a tabela oficial de tarifas da
+B3, transcrita no código.
+
 ## Como reproduzir
 
 Requer [uv](https://docs.astral.sh/uv/). Python 3.12, fixado em `.python-version`.
 
     uv sync
     uv run python -m overnight_br.pipeline   # baixa ~700 MB da B3 na primeira vez
+    uv run python -m overnight_br.backtest   # baixa o CDI do Banco Central
     uv run pytest
 
-O pipeline grava `results/`: figuras, `carteira_diaria.csv`, `por_acao.csv` e `universo.csv`.
+Os dois gravam em `results/` as figuras e as tabelas em CSV.
 
 ## Estrutura
 
@@ -73,6 +95,7 @@ O pipeline grava `results/`: figuras, `carteira_diaria.csv`, `por_acao.csv` e `u
       universo.py      as 100 mais líquidas de cada ano, só com dados do ano anterior
       resultados.py    carteira, tabela por ação e figuras
       pipeline.py      tudo de ponta a ponta
+      backtest.py      o fundo: estratégias, custos da B3, métricas contra Ibovespa e CDI
     data/              bruto e processado; fora do git, o pipeline refaz
     results/           tabelas e figuras
     docs/              literatura, tratamento dos preços, resultados
