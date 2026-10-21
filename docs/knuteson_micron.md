@@ -88,7 +88,6 @@ extremos, as "Microns brasileiras", olhando a tabela completa e não só o top. 
 relação ao plano original: o universo deixa de ser "top-100 + todas com volume mediano ≥ R$ 1
 mi/dia" e passa a ser **só as ~100 mais líquidas**, por decisão do João em 20/10/2026.
 
-Ainda falta decidir:
-- **Como escolher as 100.** Uma opção é a liquidez de hoje, que é simples mas tem viés de
-  sobrevivência. A outra é a liquidez ponto a ponto no tempo (ex.: as 100 mais líquidas de
-  cada ano, deslistadas incluídas), que é mais honesta.
+**Como escolher as 100: decidido em 21/10/2026.** Sem viés de sobrevivência: a cada ano, as
+100 mais líquidas do ano anterior, deslistadas incluídas. Feito no passo 1; ver
+[`resultados_passo1.md`](resultados_passo1.md).
