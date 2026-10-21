@@ -25,6 +25,7 @@ Desdobramento, grupamento e provento caem na perna overnight, porque a ação ab
 | Fase | Situação |
 |---|---|
 | 1. Revisão de literatura | Concluída: [`docs/literature_review.md`](docs/literature_review.md). Conclusão: **testado só parcialmente no Brasil**. Há estudos de índice com abertura possivelmente velha, e nenhum estudo de média por ação |
+| 1b. O caso Micron (Knuteson, ex-D. E. Shaw) | Pesquisado: [`docs/knuteson_micron.md`](docs/knuteson_micron.md). Alvo: replicar o gráfico ação por ação para as ~100 ações mais líquidas da B3 |
 | 2. Teste empírico | Em andamento, com pontos de parada para revisão humana |
 
 ## Dados (todos gratuitos)
