@@ -1,0 +1,10 @@
+,CDI,Ibovespa,Comprar e segurar,"Só overnight, custo de fundo"
+Retorno no período,0.780120,0.569370,-0.998390,7.705631
+Retorno a.a.,0.126447,0.097519,-0.734976,0.563302
+Volatilidade a.a.,0.001199,0.180300,1.273107,0.547427
+Sharpe (sobre o CDI),,-0.056172,-0.548363,0.880616
+Máximo drawdown,0.000000,-0.210324,-0.999195,-0.651402
+Information ratio (sobre o Ibovespa),0.056172,,-0.546785,0.878151
+Tracking error a.a.,0.180300,0.000000,1.258257,0.560529
+Beta com o Ibovespa,0.000019,1.000000,1.078195,0.276729
+Correlação com o Ibovespa,0.002928,1.000000,0.152696,0.091143

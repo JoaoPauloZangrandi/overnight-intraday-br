@@ -28,7 +28,7 @@ USIM5: **+153.866.610%** de noite e **−99,9996%** de dia, em 27 anos.
 - Resultados completos: [`docs/resultados_passo1.md`](docs/resultados_passo1.md)
 - Como os preços foram tratados, e por quê: [`docs/tratamento_dos_precos.md`](docs/tratamento_dos_precos.md)
 
-## E dá para um fundo ganhar dinheiro com isso? Não
+## Comprar todas as líquidas toda noite? Não paga o custo
 
 Backtest com as 30 ações mais líquidas de hoje, nos últimos 5 anos, executando nos leilões e
 pagando custos reais (tarifa oficial de day trade da B3, corretagem e impacto):
@@ -45,6 +45,29 @@ empatar com o CDI, o custo total teria de ser 0,77 bp por lado, e só a tarifa d
 a 2,21 bp. Detalhes, métricas e onde o efeito ainda aparece: [`docs/backtest.md`](docs/backtest.md).
 
 ![backtest](results/backtest_curvas.png)
+
+## Mas existe uma versão que faz dinheiro: a persistência
+
+Busca com 315 configurações: ações, units, ETFs (índices), FIIs e BDRs, sete estratégias, nove
+janelas e dois níveis de custo. Toda escolha usa só o passado. A versão que sobrevive é simples:
+**todo mês, as 10 ações das 50 mais líquidas com a noite mais forte nos 12 meses anteriores;
+compra no leilão de fechamento, vende no de abertura.**
+
+| Últimos 5 anos | Ibovespa | CDI | Persistência, custo de mesa (2,9 bp) | Persistência, custo de fundo (4,9 bp) |
+|---|---|---|---|---|
+| Retorno ao ano | 14,0% | 12,7% | **27,1%** | 15,0% |
+| Sharpe (sobre o CDI) | 0,15 | — | **0,95** | 0,22 |
+| Máximo drawdown | −21,0% | 0% | −9,4% | −10,3% |
+
+- Paga o custo de fundo em todos os subperíodos desde 2005.
+- Com custo de mesa, ganha do CDI em 21 de 22 anos.
+- No período longo, o Sharpe passa com folga do que 315 tentativas dariam por sorte.
+- Para um fundo comum, fica no limite.
+
+Os detalhes, o que não funcionou e a "Micron brasileira operável" (OIBR3: +771% só de noite,
+com a ação caindo 99,8%) estão em [`docs/busca.md`](docs/busca.md).
+
+![busca](results/busca_principal.png)
 
 ## A conta
 
@@ -65,6 +88,7 @@ na data-ex. O motivo está em [`docs/tratamento_dos_precos.md`](docs/tratamento_
 | 1b. O caso Micron (Knuteson, ex-D. E. Shaw) | Pesquisado: [`docs/knuteson_micron.md`](docs/knuteson_micron.md) |
 | Passo 1. Overnight vs intraday, 100 mais líquidas | **Concluído**: [`docs/resultados_passo1.md`](docs/resultados_passo1.md) |
 | Passo 2. Backtest de um fundo, com custos reais | **Concluído**: [`docs/backtest.md`](docs/backtest.md) |
+| Passo 3. Busca por uma versão que pague o custo | **Concluído**: [`docs/busca.md`](docs/busca.md) |
 
 ## Dados
 
@@ -83,6 +107,7 @@ Requer [uv](https://docs.astral.sh/uv/). Python 3.12, fixado em `.python-version
     uv sync
     uv run python -m overnight_br.pipeline   # baixa ~700 MB da B3 na primeira vez
     uv run python -m overnight_br.backtest   # baixa o CDI do Banco Central
+    uv run python -m overnight_br.busca      # as 315 tentativas (~2 min)
     uv run pytest
 
 Os dois gravam em `results/` as figuras e as tabelas em CSV.
@@ -96,6 +121,7 @@ Os dois gravam em `results/` as figuras e as tabelas em CSV.
       resultados.py    carteira, tabela por ação e figuras
       pipeline.py      tudo de ponta a ponta
       backtest.py      o fundo: estratégias, custos da B3, métricas contra Ibovespa e CDI
+      busca.py         a busca: classes de ativo, estratégias, janelas e o registro de tentativas
     data/              bruto e processado; fora do git, o pipeline refaz
     results/           tabelas e figuras
     docs/              literatura, tratamento dos preços, resultados

@@ -43,14 +43,27 @@ CODBDI_ACAO = {
 }
 
 
-def ler(anos: range) -> tuple[pd.DataFrame, pd.DatetimeIndex]:
-    """Ações de todos os anos, e o calendário de pregões da bolsa (todo dia com negócio)."""
+def _classe(df: pd.DataFrame, classe: str) -> pd.Series:
+    """Filtro de cada classe de ativo. A mesma conta de pernas vale para todas."""
+    tipo = df["especi"].str.split(r"[\s*]+", regex=True).str[0]
+    if classe == "acoes":
+        return df["codbdi"].isin(CODBDI_ACAO) & tipo.str.match(TIPO_ACAO)
+    if classe == "etf":
+        return (df["codbdi"] == "14") & (tipo == "CI")
+    if classe == "fii":
+        return (df["codbdi"] == "12") & (tipo == "CI")
+    if classe == "bdr":
+        return (df["codbdi"] == "02") & tipo.str.match(r"^DR[123NE]$")
+    raise ValueError(classe)
+
+
+def ler(anos: range, classe: str = "acoes") -> tuple[pd.DataFrame, pd.DatetimeIndex]:
+    """Papéis da classe em todos os anos, e o calendário de pregões da bolsa."""
     partes, datas = [], []
     for ano in anos:
         df = pd.read_parquet(cotahist.PROCESSADO / f"{ano}.parquet")
         datas.append(df["data"].unique())
-        tipo = df["especi"].str.split(r"[\s*]+", regex=True).str[0]
-        partes.append(df[df["codbdi"].isin(CODBDI_ACAO) & tipo.str.match(TIPO_ACAO)])
+        partes.append(df[_classe(df, classe)])
     calendario = pd.DatetimeIndex(np.unique(np.concatenate(datas)))
     return pd.concat(partes, ignore_index=True), calendario
 
