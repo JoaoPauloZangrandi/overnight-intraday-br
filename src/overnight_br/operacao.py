@@ -24,7 +24,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from overnight_br import backtest, busca, carteira, cotahist, painel, universo
+from overnight_br import backtest, busca, carteira, cotahist, painel, selecao, universo
 
 PASTA = cotahist.RAIZ / "data" / "operacao"
 ARQUIVO_PAINEL = cotahist.PROCESSADO.parent / "painel.parquet"
@@ -109,10 +109,13 @@ def _universo_para(p: pd.DataFrame, ano_alvo: int, ate: pd.Timestamp) -> set[str
 
 def escolha_para(p: pd.DataFrame, mes_alvo: pd.Period, ate: pd.Timestamp) -> pd.DataFrame:
     """As 5 do mês alvo, usando só o que se sabe até `ate` (na prática, a véspera do último
-    pregão do mês anterior, que é quando a decisão é tomada)."""
+    pregão do mês anterior, que é quando a decisão é tomada). O ranking é pela média aparada
+    da noite em 12 meses, a regra escolhida em selecao.py; noite_bp é a média simples, só para
+    comparar."""
     janela = p[(p["data"] > ate - pd.DateOffset(years=1)) & (p["data"] <= ate)]
     g = janela.groupby("ticker")
     sinal = pd.DataFrame({"noites": g["r_overnight"].count(),
+                          "aparada_bp": g["r_overnight"].apply(selecao.media_aparada) * 1e4,
                           "noite_bp": g["r_overnight"].mean() * 1e4,
                           "pregao_bp": g["r_intraday"].mean() * 1e4})
     sinal = sinal[sinal["noites"] >= busca.MINIMO_NOITES]
@@ -120,7 +123,7 @@ def escolha_para(p: pd.DataFrame, mes_alvo: pd.Period, ate: pd.Timestamp) -> pd.
     sinal = sinal.join(ultimo, how="inner")
     ok = (sinal.index.isin(_universo_para(p, mes_alvo.year, ate))
           & (sinal["fechamento_acao"] >= carteira.PRECO_MINIMO) & (sinal["codbdi"] == "02"))
-    return sinal[ok].nlargest(carteira.N_ACOES, "noite_bp")
+    return sinal[ok].nlargest(carteira.N_ACOES, "aparada_bp")
 
 
 def escolhas_historicas(p: pd.DataFrame, desde: pd.Period) -> pd.DataFrame:
@@ -303,7 +306,8 @@ def main() -> None:
         oficial = ultimo_pregao_do_mes(hoje)
         print(f"Carteira de {mes_alvo} com dados até {ultimo_dado:%d/%m/%Y}"
               + ("" if oficial else " (PRÉVIA: a escolha oficial é no último pregão do mês)"))
-        print(e[["nome", "noite_bp", "pregao_bp", "fechamento_acao"]].round(2).to_string())
+        print(e[["nome", "aparada_bp", "noite_bp", "pregao_bp", "fechamento_acao"]].round(2)
+              .to_string())
         return
 
     if a.comando == "boleta":

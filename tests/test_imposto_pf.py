@@ -26,3 +26,11 @@ def test_as_partes_da_noite_somam_o_retorno_da_noite():
     d = ir.componentes(p, esc, pd.Series(0.0005, index=datas))
     assert d["dt_noite"].iloc[0] + d["comum_noite"].iloc[0] == pytest.approx(0.02)
     assert d["dt_dia"].iloc[0] == pytest.approx(0.01)
+
+
+def test_ao_ano_usa_os_anos_de_calendario():
+    # 5 anos que começam e terminam no meio do mês têm 61 meses no índice: contar meses daria
+    # 12/61 em vez de 1/5 no expoente
+    meses = pd.period_range("2021-10", periods=61, freq="M")
+    mensal = pd.Series(2 ** (1 / 61) - 1, index=meses)  # dobra no período
+    assert ir.ao_ano(mensal, anos=5.0) == pytest.approx(2 ** (1 / 5) - 1)

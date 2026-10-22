@@ -12,16 +12,18 @@
 2. Na versão completa, fica também **vendido durante o pregão** (do leilão de abertura ao de
    fechamento) nas mesmas 5, sem aluguel de ações.
 3. As 5 são escolhidas uma vez por mês: entre as 50 mais líquidas, acima de R$ 5 e fora de
-   recuperação judicial, as que **mais subiram de noite nos últimos 12 meses**.
+   recuperação judicial, as de **maior média aparada da noite nos últimos 12 meses** (a média sem
+   as 5% piores e as 5% melhores noites). A escolha da regra está em [`so_noite.md`](so_noite.md).
 4. Toda operação acontece **nos leilões**, onde todo mundo negocia a um preço único. De manhã
    você só vende; à tarde você só compra. Uma ordem por ação por leilão.
 5. Custo de uma pessoa física: cerca de 2,8 bp por lado, ou 14% ao ano, porque o dinheiro gira
    duas vezes por dia.
-6. Nos últimos 5 anos, com esse custo e já com o imposto de pessoa física: cerca de **27% ao
-   ano** na versão completa e **21%** só de noite. No mesmo período, o Ibovespa fez 12% e o
+6. Nos últimos 5 anos, com esse custo e já com o imposto de pessoa física: cerca de **29% ao
+   ano** na versão completa e **21%** só de noite. No mesmo período, o Ibovespa fez 13% e o
    CDI 11%, ambos depois do imposto.
-7. A carteira **ganha nas quedas e perde nas altas fortes** da bolsa. Em 2025 ficou perto de
-   zero, enquanto o Ibovespa subiu 35%.
+7. A carteira **ganha do Ibovespa nas quedas e fica atrás dele nas altas fortes**. Em 2025,
+   com o Ibovespa subindo 35%, a só noite fez 14% e a completa 8,5%, antes do imposto. E ela
+   dorme comprada: na COVID, a só noite caiu 46% em cinco semanas.
 8. O repositório já calcula a carteira do mês, a boleta de cada leilão, o teste em papel e a
    conferência das execuções, e agenda tudo no Windows.
 9. **Mandar as ordens fica com você** até um executor automático ser escrito para a sua
@@ -81,16 +83,21 @@ No **último pregão de cada mês**, antes do leilão de fechamento, com os dado
    - preço acima de R$ 5 (abaixo disso, um tick de R$ 0,01 já vale mais de 20 bp, e o preço anda
      aos saltos);
    - fora de recuperação judicial ou de situação especial na B3.
-3. **Sinal:** o retorno médio da noite de cada uma nos últimos 12 meses. Exige pelo menos 120
-   noites.
+3. **Sinal:** a média aparada da noite de cada uma nos últimos 12 meses, sem as 5% piores e as
+   5% melhores noites. Exige pelo menos 120 noites.
+   - **Por quê:** as noites extremas (balanço, notícia, pânico) não se repetem. Sem elas, o sinal
+     mede a pressão de todo dia.
+   - **Como foi escolhida:** ganhou de outras 179 regras num teste com critério fixado antes
+     ([`so_noite.md`](so_noite.md), seção 2).
+   - **A regra antiga,** a média simples, escolhe em média 4 das mesmas 5 ações.
 4. **Carteira:** as 5 de maior sinal, com peso igual.
 
-Decidir com os dados até a véspera, e não até o próprio dia, não muda nada. Testado: 96% das
-escolhas são as mesmas, e o resultado fica igual (34,9% contra 34,8% ao ano em 5 anos).
+Decidir com os dados até a véspera, e não até o próprio dia, quase não muda nada. Testado com
+a regra antiga: 96% das escolhas foram as mesmas, e o resultado ficou igual.
 
 **Exemplo real:**
-- A carteira de outubro de 2026, decidida em 30/09, é ALOS3, BBSE3, BPAC11, CMIG4 e MGLU3.
-- A prévia de novembro troca a BBSE3 pela ITUB4.
+- A carteira de outubro de 2026, decidida em 30/09, é HAPV3, MGLU3, CMIG4, ALOS3 e BBSE3.
+- A prévia de novembro, com os dados até 21/10, troca a BBSE3 pela BPAC11.
 
 ### 1.4 Por que só nos leilões, e como a "virada" é imediata
 
@@ -116,42 +123,50 @@ executam. Por isso o backtest usa só os preços dos leilões, e por isso a oper
 
 | Últimos 5 anos | Antes do imposto | Depois do imposto de PF |
 |---|---|---|
-| Versão completa, custo de pessoa física | 35,4% ao ano | **26,7% ao ano** |
-| Só noite, custo de pessoa física | 28,3% ao ano | **20,7% ao ano** |
-| Ibovespa (15% no resgate) | 14,0% ao ano | 12,3% ao ano |
+| Versão completa, custo de pessoa física | 39,1% ao ano | **29,3% ao ano** |
+| Só noite, custo de pessoa física | 29,0% ao ano | **20,6% ao ano** |
+| Ibovespa (15% no resgate) | 14,4% ao ano | 12,7% ao ano |
 | CDI (15%) | 12,7% ao ano | 11,1% ao ano |
 
-Fonte: [`imposto_pf.py`](../src/overnight_br/imposto_pf.py).
+Fonte: [`imposto_pf.py`](../src/overnight_br/imposto_pf.py), com a regra da média aparada e dados
+até 21/10/2026. Antes desta versão, a tabela mostrava 26,7% e 20,7% depois do IR: era a regra
+antiga, com uma anualização que contava 61 meses em 5 anos.
 
-- **Volatilidade:** cerca de 15% ao ano, contra 18% do Ibovespa. A pior queda em 5 anos foi de
-  −11% (versão completa, custo de mesa).
-- **Cenários** ([`cenarios.md`](cenarios.md)):
-  - ganha do Ibovespa em 100% dos meses de queda forte e em só 9% dos meses de alta forte;
+- **Volatilidade:** cerca de 15% ao ano nas duas versões, contra 18% do Ibovespa.
+- **Pior queda:**
+  - nos últimos 5 anos, −11% na só noite, contra −21% do Ibovespa;
+  - desde 2009, −46% na só noite, na COVID (12/02 a 19/03/2020). Recuperou em junho de 2020.
+- **Cenários:**
+  - a só noite ganha do Ibovespa em 96% dos meses de queda forte e em 28% dos de alta forte
+    ([`so_noite.md`](so_noite.md), seção 8);
+  - a completa, com a regra antiga, ganhou em 100% e em 9% ([`cenarios.md`](cenarios.md));
   - não dá para prever os meses ruins.
-- **Anos ruins:**
-  - 2025: −0,1% antes e −1,4% depois do imposto, na versão completa;
-  - 2026 até outubro: fraco, também por causa da alta forte.
-- **Ao vivo, em papel, de 01/10 a 21/10/2026:** só noite +12,0%, versão completa +0,5%,
-  Ibovespa +10,4%. É uma alta forte: a noite pegou a alta, e a perna vendida devolveu.
+- **Anos ruins:** 2025 e 2026, de alta forte, antes do imposto.
+  - 2025: o Ibovespa subiu 34,7%; a só noite fez 14,1% e a completa 8,5%.
+  - 2026, até 21/10: o Ibovespa subiu 28,8%; a só noite fez 17,5% e a completa 20,3%.
+- **Ao vivo, em papel, de 01/10 a 21/10/2026, com a regra nova:** só noite +11,9%, versão
+  completa −0,3%, Ibovespa +10,6%. É uma alta forte: a noite pegou a alta, e a perna vendida
+  devolveu.
 
 ---
 
 ## Parte 2. Quatro decisões antes de começar
 
-1. **Versão.** Comece pela **só noite**:
+1. **Versão.** Comece pela **só noite**, que tem um relatório próprio
+   ([`so_noite.md`](so_noite.md)):
    - não exige ficar vendido, não usa margem e não corre o risco de a corretora zerar o vendido
      antes do leilão;
-   - rendeu menos nos últimos 5 anos (21% contra 27% ao ano, depois do IR), mas vai melhor nas
-     altas fortes, como agora.
+   - rendeu menos nos últimos 5 anos (21% contra 29% ao ano, depois do IR), mas sofreu menos em
+     2025, ano de alta forte (14% contra 8,5%, antes do IR).
 
    A completa entra depois, se a corretora passar no checklist da Parte 3.
 2. **Capital.** As ações negociam em lotes de 100.
    - Com R$ 100 mil na versão só noite, cada ação recebe ~R$ 20 mil. Com os preços de 21/10/2026,
-     isso dava 200 BPAC11 (R$ 16 mil) e 1.500 MGLU3 (R$ 19,6 mil); uns 10% ficam parados pelo
+     isso dava 200 BPAC11 (R$ 16 mil) e 1.500 MGLU3 (R$ 19,6 mil); uns 8% ficam parados pelo
      arredondamento.
    - Na versão completa, cada perna de cada ação recebe R$ 10 mil, e a BPAC11 só cabe com 1 lote.
-   - Abaixo de ~R$ 50 mil (só noite) ou ~R$ 100 mil (completa), os lotes não fecham. O mercado
-     fracionário existe, mas tem livro próprio e o preço pode diferir.
+   - Abaixo de ~R$ 41 mil (só noite) ou ~R$ 81 mil (completa), a BPAC11, a R$ 80, não cabe em
+     lote de 100. O mercado fracionário existe, mas tem livro próprio e o preço pode diferir.
 3. **Corretora.** Ver Parte 3.
 4. **Automação.**
    - **Semiautomática (recomendada para começar):** o computador atualiza os dados, escolhe as 5,
@@ -163,12 +178,23 @@ Fonte: [`imposto_pf.py`](../src/overnight_br/imposto_pf.py).
 
 ## Parte 3. A corretora
 
+**Para a só noite, a escolha é a Rico.** A análise, com a tabela das corretoras e as fontes,
+está em [`so_noite.md`](so_noite.md), seção 10. O resumo:
+- **Custo:** corretagem zero em ações nas duas pontas, day trade e operação comum, nas ordens que
+  você mesmo manda. A XP cobra R$ 4,90 por ordem na operação comum.
+- **Automação:** dois caminhos, o MetaTrader 5 (grátis para clientes) e o Profit com a
+  ProfitDLL. Falta confirmar que o MT5 da Rico opera ações à vista. Na Clear, que tem o mesmo
+  custo, o MT5 é só para day trade e não aceita robôs.
+- **Plano B:** Genial, se a Rico não confirmar o MT5 para ações.
+- **Nunca mande as ordens do dia pela mesa (telefone):** na Rico, custa 0,5% do volume.
+
 ### 3.1 O que ela precisa ter, e por quê
 
 | Requisito | Por quê |
 |---|---|
-| Corretagem zero em ações, inclusive day trade | o custo assumido para pessoa física (2,8 bp por lado) já não deixa folga |
+| Corretagem zero em ações nas duas pontas, day trade e operação comum | o custo assumido para pessoa física (2,8 bp por lado) já não deixa folga |
 | Aceitar ordens nos leilões de abertura e fechamento, a mercado ou limitadas | toda a estratégia acontece nos leilões |
+| Comprar à tarde com o dinheiro da venda da manhã | as duas liquidam juntas, em D+2 |
 | (Versão completa) Venda a descoberto em day trade nas ações da carteira | é a perna do dia; recomprada no mesmo pregão, dispensa aluguel |
 | (Versão completa) Aceitar Tesouro Selic como garantia | a metade do dinheiro da perna do dia fica rendendo CDI como garantia |
 | (Versão completa) **Não zerar o vendido antes do leilão de fechamento** | se a corretora zerar às 16h45, a recompra sai fora do leilão, a outro preço |
@@ -176,34 +202,39 @@ Fonte: [`imposto_pf.py`](../src/overnight_br/imposto_pf.py).
 
 ### 3.2 Perguntas para fazer antes de abrir a conta
 
-Mande por escrito e guarde a resposta:
+Mande por escrito e guarde a resposta. Para a só noite, use as seis perguntas de
+[`so_noite.md`](so_noite.md), seção 10.4. Para a versão completa, faça também estas:
 
-1. "A corretagem para ações à vista, inclusive day trade, é zero? Há custódia ou outra taxa?"
-2. "Posso mandar ordens a mercado no leilão de abertura (9h45–10h) e no call de fechamento?
-   Há restrição para pessoa física?"
-3. "Posso vender a descoberto em day trade ações como ITUB4, CMIG4 e MGLU3, recomprando no call
+1. "Posso vender a descoberto em day trade ações como ITUB4, CMIG4 e MGLU3, recomprando no call
    de fechamento? Que garantia é exigida? O Tesouro Selic é aceito e com qual deságio?"
-4. "Até que horário posso manter uma posição de day trade? A zeragem compulsória acontece antes
+2. "Até que horário posso manter uma posição de day trade? A zeragem compulsória acontece antes
    do call de fechamento ou no próprio call? Ela vale para quem tem garantia suficiente? Há taxa
    de zeragem?"
-5. "Vocês oferecem MetaTrader 5 ou a ProfitDLL com roteamento de ordens para ações à vista,
-   para pessoa física? Há conta de simulação?"
-6. "Como recebo as notas de corretagem, e vocês dão relatório de day trade para o imposto?"
 
 ### 3.3 O que eu verifiquei e o que não consegui verificar
 
-- **Zeragem.** O manual de risco da Clear manda zerar o day trade até 5 minutos antes do leilão
-  de encerramento; se não for zerado, o sistema zera no próprio leilão. Para a perna vendida,
-  isso dá o mesmo preço que buscamos, mas confirme que nada é zerado antes do leilão e se há
-  taxa. Não verifiquei a regra das outras corretoras.
-- **ProfitDLL (Nelogica).** Tem documentação oficial de envio, acompanhamento e cancelamento de
-  ordens na B3 por programa, em Python via ctypes, e exige uma senha de roteamento separada. Não
-  verifiquei quais corretoras a habilitam para pessoa física nem o custo da licença.
-- **MetaTrader 5.** O pacote Python só roda no Windows, com o terminal aberto. Muitas corretoras
-  oferecem MT5 só para mini-índice e mini-dólar. A única confirmação de MT5 para ações que
-  encontrei é antiga: a Rico, em 2015.
-- **Não recomendo uma corretora específica:** as respostas das perguntas 3, 4 e 5 decidem, e eu
-  não consegui confirmá-las para nenhuma.
+- **Corretagem e plataformas,** pesquisadas em 22/10/2026: ver a tabela em
+  [`so_noite.md`](so_noite.md), seção 10.2. Os sites do grupo XP bloqueiam leitura automática,
+  então os números vêm dos trechos das páginas oficiais que aparecem nos buscadores.
+- **RLP.**
+  - É a condição da corretagem zero em várias corretoras. Em ações, é experimental por 18 meses
+    a partir de 03/11/2025, em 20 ações (B3, Ofício Circular 038/2025-VNC).
+  - Ele só cruza com ordens agressoras, então não deveria tocar nas ordens de leilão. É a minha
+    leitura da regra: confirme com a corretora.
+- **Zeragem (versão completa).** O manual de risco da Clear manda zerar o day trade até 5 minutos
+  antes do leilão de encerramento. Se não for zerado, o sistema zera no próprio leilão. A taxa
+  de zeragem compulsória da Clear é a tabela Bovespa mais 0,5%, com mínimo de R$ 50. Não
+  verifiquei a regra das outras corretoras.
+- **ProfitDLL (Nelogica).**
+  - É uma biblioteca Windows que manda, acompanha e cancela ordens na B3, em Python via ctypes.
+  - Exige conta habilitada para negociar numa corretora parceira (a Rico está na lista) e uma
+    senha de roteamento separada.
+  - Não encontrei o preço da licença.
+- **MetaTrader 5.**
+  - O pacote Python só roda no Windows, com o terminal aberto.
+  - Rico: grátis para clientes, mas não confirmei que opera ações à vista hoje.
+  - Clear: só day trade, sem robôs, segundo o manual dela.
+  - Genial: a página lista ações.
 
 ---
 
@@ -250,17 +281,22 @@ O `minha_posicao.csv` tem duas colunas, `ticker,quantidade`, com o vendido em ne
 ### 4.3 O último pregão do mês: a troca de carteira
 
 A troca acontece **no leilão de fechamento do último pregão do mês**. Exemplo com a prévia
-calculada em 22/10: em 30/10/2026, MGLU3, BPAC11, ALOS3, ITUB4 e CMIG4 entram, e a BBSE3 sai. A
-escolha oficial sai na manhã de 30/10, com os dados até 29/10, e pode mudar.
+calculada em 22/10:
+- a carteira de outubro é HAPV3, MGLU3, CMIG4, ALOS3 e BBSE3;
+- a de novembro seria MGLU3, HAPV3, ALOS3, CMIG4 e BPAC11.
+
+Em 30/10/2026, portanto, a BPAC11 entra e a BBSE3 sai. A escolha oficial sai na manhã de 30/10,
+com os dados até 29/10, e pode mudar.
 
 - **Manhã de 30/10:** igual a todo dia. Vende o que dormiu comprado, inclusive a BBSE3, e na
   versão completa abre o vendido nas 5 de outubro.
 - **08h10 de 30/10:** a tarefa grava a escolha oficial de novembro, com os dados até 29/10.
 - **Fechamento de 30/10:** a boleta já usa a carteira de novembro.
-  - Recompra o vendido do dia nas 5 de outubro.
   - Compra para a noite as 5 de novembro.
-  - A BBSE3 só é recomprada, para zerar o vendido, e não volta para a noite.
-  - A ITUB4 entra comprada pela primeira vez.
+  - A BBSE3 não volta para a noite. Na versão completa, ela só é recomprada, para zerar o
+    vendido.
+  - A BPAC11 entra comprada pela primeira vez.
+  - Na versão completa, também recompra o vendido do dia nas 5 de outubro.
 - **Manhã de 03/11** (02/11 é feriado): vende as 5 de novembro e, na versão completa, abre o
   vendido nelas.
 
@@ -302,7 +338,7 @@ feriados da B3 que está no código.
 | Perdeu o call de fechamento (versão completa) | **o vendido não pode dormir.** Recompre no after-market (17h30–18h) ou fale com a mesa da corretora. Vendido que passa da noite vira aluguel compulsório |
 | Ordem executou em parte | anote a posição real e rode a próxima boleta com `--posicoes` |
 | Ação suspensa ou em leilão prolongado | não force. Opere as outras 4 e trate a suspensa no próximo leilão |
-| Internet ou computador caiu | tenha o aplicativo da corretora no celular e a boleta do dia salva em `data/operacao` |
+| Internet ou computador caiu | tenha o aplicativo da corretora no celular e a boleta do dia salva em `data/operacao`. Evite a mesa: na Rico, ordem pela mesa custa 0,5% do volume |
 | A boleta acusa "posição vendida que dormiu" | pare tudo e zere o vendido antes de qualquer outra ordem |
 
 ### 4.7 Horários e feriados
@@ -388,9 +424,11 @@ seguintes.
 - Use um serviço de cálculo de imposto de bolsa que trate day trade, ou um contador. Com duas
   operações por ação por dia, a conta à mão não é viável.
 
-**Quanto custa:** cerca de 7 pontos de retorno por ano, como mostra a tabela da seção 1.5. Em ano
-de bolsa subindo e estratégia fraca, como 2025, você pode pagar imposto sobre a parte comum
-enquanto o prejuízo de day trade fica parado.
+**Quanto custa:** de 7% a 8% do patrimônio por ano, ou 8 a 10 pontos de retorno, como mostra a
+tabela da seção 1.5. Na só noite, de 2009 a 2026, a parte day trade deu lucro em 2 de cada 3
+meses e pagou 20%, enquanto a parte comum deu prejuízo em metade dos meses, que ficou parado. Em
+2024, a só noite rendeu 28,0% antes do IR e 10,9% depois ([`so_noite.md`](so_noite.md),
+seção 6).
 
 **Alternativa: clube de investimento.**
 - Com pelo menos 67% em ações, o clube paga 15% só no resgate e nada por operação. Isso elimina
@@ -460,3 +498,4 @@ As alíquotas podem mudar (houve propostas de reforma). Confirme as regras do an
   - [InfoMoney, prejuízo](https://www.infomoney.com.br/minhas-financas/como-abater-do-lucro-o-prejuizo-com-o-day-trade-na-declaracao-do-imposto-de-renda/)
   - [Renova Invest, DARF 6015](https://renovainvest.com.br/blog/day-trade-o-que-e-e-como-funciona/)
 - Clubes de investimento: [InfoMoney](https://www.infomoney.com.br/?p=289317), [Safra](https://oespecialista.safra.com.br/clube-de-investimento/)
+- Corretoras, RLP e plataformas (22/10/2026): ver as fontes de [`so_noite.md`](so_noite.md)

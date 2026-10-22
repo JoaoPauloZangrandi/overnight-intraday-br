@@ -92,6 +92,31 @@ As duas pernas das ações, a carteira contra o Ibovespa e os cenários: [`docs/
 
 ![carteira](results/carteira_curvas.png)
 
+## Só de noite: a versão para operar como pessoa física
+
+E se a gente só operar a noite? A carteira compra no leilão de fechamento, vende no de abertura
+e nunca fica vendida. As 5 ações saem de um teste de 180 regras, com critério fixado antes de
+rodar. Venceu a **média aparada da noite em 12 meses**: a média sem as 5% piores e as 5% melhores
+noites, entre as 50 mais líquidas.
+
+| Últimos 5 anos | Ibovespa | CDI | Só noite, custo de PF | Só noite, custo de fundo |
+|---|---|---|---|---|
+| Retorno ao ano | 14,4% | 12,7% | **29,0%** | 16,2% |
+| Depois do IR de pessoa física | 12,7% | 11,1% | **20,6%** | — |
+| Volatilidade | 18,3% | 0,1% | 14,7% | 14,7% |
+| Pior queda | −21% | 0% | −11% | −13% |
+
+- **Desde 2009:** 42,8% ao ano com custo de PF e Sharpe de 1,38. Isso passa com folga do que as
+  510 tentativas do projeto dariam por sorte (0,84).
+- **O risco é a noite de pânico:** na COVID, a carteira caiu 46% em cinco semanas.
+- **Nas altas fortes, fica atrás do Ibovespa,** como em 2025 e 2026.
+- **Corretora:** Rico, com seis perguntas para confirmar por escrito.
+
+Custos, imposto, piso de preço, cenários, piores noites e a carteira de novembro estão em
+[`docs/so_noite.md`](docs/so_noite.md).
+
+![so noite](results/so_noite_curvas.png)
+
 ## Como operar de verdade
 
 O manual completo está em [`docs/como_operar.md`](docs/como_operar.md): teoria, rotina
@@ -126,6 +151,7 @@ na data-ex. O motivo está em [`docs/tratamento_dos_precos.md`](docs/tratamento_
 | Passo 4. A carteira de 5 ações | **Concluído**: [`docs/carteira.md`](docs/carteira.md) |
 | Passo 5. Pernas, carteira contra o Ibovespa e cenários | **Concluído**: [`docs/cenarios.md`](docs/cenarios.md) |
 | Passo 6. Operação: manual, boleta, papel e agendamento | **Concluído**: [`docs/como_operar.md`](docs/como_operar.md) |
+| Passo 7. Só noite: como escolher as 5, bateria completa e corretora | **Concluído**: [`docs/so_noite.md`](docs/so_noite.md) |
 
 ## Dados
 
@@ -147,6 +173,8 @@ Requer [uv](https://docs.astral.sh/uv/). Python 3.12, fixado em `.python-version
     uv run python -m overnight_br.busca      # as 315 tentativas (~2 min)
     uv run python -m overnight_br.carteira   # a carteira de 5 ações e a lista de hoje
     uv run python -m overnight_br.analise_carteira   # gráficos e cenários da carteira
+    uv run python -m overnight_br.selecao            # as 180 regras de escolha das 5 (~5 min)
+    uv run python -m overnight_br.so_noite           # a bateria da só noite (~10 min)
     uv run python -m overnight_br.imposto_pf         # efeito do imposto de pessoa física
     uv run python -m overnight_br.operacao --help    # operação: escolha, boleta, papel, conferir
     uv run pytest
@@ -165,6 +193,8 @@ Os dois gravam em `results/` as figuras e as tabelas em CSV.
       busca.py         a busca: classes de ativo, estratégias, janelas e o registro de tentativas
       carteira.py      a carteira de 5 ações: regra, as duas pernas e a lista de hoje
       analise_carteira.py  gráficos das pernas, contra o Ibovespa, e os cenários
+      selecao.py       como escolher as 5: as 180 regras, o critério e a regra escolhida
+      so_noite.py      a só noite: métricas, custo, piso, imposto, cenários e piores noites
       imposto_pf.py    o imposto de pessoa física, mês a mês
       operacao.py      operar: escolha do mês, boleta dos leilões, papel e conferência
     scripts/           agendamento da rotina no Windows

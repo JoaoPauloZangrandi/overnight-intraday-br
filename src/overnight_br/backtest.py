@@ -142,11 +142,15 @@ def carteiras(base: pd.DataFrame, cdi_dia: pd.Series, ibov: pd.Series,
     return d.iloc[1:]  # o primeiro pregão não tem noite anterior dentro da janela
 
 
+def anos(datas: pd.DatetimeIndex) -> float:
+    """Anos de calendário, do fechamento da véspera do primeiro dia ao último fechamento. Contar
+    252 pregões por ano daria 4,95 anos para 5 (a B3 tem cerca de 249 pregões por ano)."""
+    return ((datas[-1] - datas[0]).days + 1) / 365.25
+
+
 def metricas(d: pd.DataFrame) -> pd.DataFrame:
     linhas = {}
-    # Anos de calendário, do fechamento da véspera do primeiro dia ao último fechamento. Contar
-    # 252 pregões por ano daria 4,95 anos para 5 (a B3 tem cerca de 249 pregões por ano).
-    anos = ((d.index[-1] - d.index[0]).days + 1) / 365.25
+    anos_ = anos(d.index)
     for nome in d.columns:
         r = d[nome]
         cota = (1 + r).cumprod()
@@ -154,7 +158,7 @@ def metricas(d: pd.DataFrame) -> pd.DataFrame:
         excesso, relativo = r - d["CDI"], r - d["Ibovespa"]
         linhas[nome] = {
             "Retorno no período": cota.iloc[-1] - 1,
-            "Retorno a.a.": cota.iloc[-1] ** (1 / anos) - 1,
+            "Retorno a.a.": cota.iloc[-1] ** (1 / anos_) - 1,
             "Volatilidade a.a.": r.std() * np.sqrt(252),
             "Sharpe (sobre o CDI)": excesso.mean() / excesso.std() * np.sqrt(252)
             if excesso.std() > 0 else np.nan,

@@ -12,14 +12,14 @@ Simplificações: a parte comum é tratada como realizada todo mês (na vida rea
 quando a ação sai da carteira); os custos são deduzidos da parte day trade. Não é cálculo
 oficial de imposto: serve para dimensionar o efeito. Confirme as regras com um contador.
 
-Uso, depois do pipeline: uv run python -m overnight_br.imposto_pf
+Uso, depois do pipeline e do selecao: uv run python -m overnight_br.imposto_pf
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from overnight_br import backtest, busca, carteira
+from overnight_br import backtest, cotahist, selecao
 
 CUSTO_PF = 0.00028  # B3 day trade 2,3 bp + corretagem zero + impacto 0,5 bp, por lado
 ALIQUOTA_DT, ALIQUOTA_COMUM, ALIQUOTA_RF = 0.20, 0.15, 0.15
@@ -71,22 +71,26 @@ def simular(d: pd.DataFrame, versao: str, custo: float = CUSTO_PF) -> pd.DataFra
     return pd.DataFrame({"antes": antes, "imposto": imposto, "depois": antes - imposto})
 
 
-def ao_ano(mensal: pd.Series) -> float:
-    return float((1 + mensal).prod() ** (12 / len(mensal)) - 1)
+def ao_ano(mensal: pd.Series, anos: float) -> float:
+    """Retorno ao ano, com os anos de calendário da janela (backtest.anos). Contar os meses
+    erraria: 5 anos que começam e terminam no meio do mês têm 61 meses no índice."""
+    return float((1 + mensal).prod() ** (1 / anos) - 1)
 
 
 def main() -> None:
-    p, u = busca.carregar("acoes_50")
+    """As duas versões com a regra escolhida em selecao.py, a mesma da operação."""
+    p = pd.read_parquet(cotahist.PROCESSADO.parent / "painel.parquet")
     cal = pd.DatetimeIndex(np.sort(p["data"].unique()))
-    d = componentes(p, carteira.escolha(p, u), backtest.cdi_por_pregao(backtest.cdi(), cal))
+    d = componentes(p, selecao.escolhas_da_regra(), backtest.cdi_por_pregao(backtest.cdi(), cal))
     fim = d.index.max()
     for versao in ("noite_e_dia", "so_noite"):
         for janela, ini in [("5 anos", fim - pd.DateOffset(years=5)),
                             ("2016-2026", pd.Timestamp("2016-01-01"))]:
-            s = simular(d[d.index > ini], versao)
-            print(f"{versao:12s} {janela:9s} antes {ao_ano(s['antes']) * 100:5.1f}% a.a. | "
-                  f"depois {ao_ano(s['depois']) * 100:5.1f}% a.a. | "
-                  f"imposto {s['imposto'].mean() * 12 * 100:.1f}% do patrimônio por ano")
+            x = d[d.index > ini]
+            s, anos = simular(x, versao), backtest.anos(x.index)
+            print(f"{versao:12s} {janela:9s} antes {ao_ano(s['antes'], anos) * 100:5.1f}% a.a. | "
+                  f"depois {ao_ano(s['depois'], anos) * 100:5.1f}% a.a. | "
+                  f"imposto {s['imposto'].sum() / anos * 100:.1f}% do patrimônio por ano")
 
 
 if __name__ == "__main__":

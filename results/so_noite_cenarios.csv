@@ -1,0 +1,17 @@
+cenario,grupo,meses,carteira,carteira_fundo,ibov,cdi,meses_acima_do_ibov,meses_acima_do_cdi
+Ibovespa no mês,queda forte (< -5%),24,-0.017027,-0.025441,-0.090805,0.007949,0.958333,0.375000
+Ibovespa no mês,queda (-5% a 0),71,0.017583,0.008763,-0.025932,0.007811,0.873239,0.633803
+Ibovespa no mês,alta (0 a +5%),66,0.036848,0.027920,0.023090,0.008095,0.606061,0.727273
+Ibovespa no mês,alta forte (> +5%),53,0.065721,0.056589,0.086728,0.007731,0.283019,0.867925
+Volatilidade do Ibovespa no mês,calmo,72,0.038042,0.029102,0.020731,0.008085,0.652778,0.763889
+Volatilidade do Ibovespa no mês,normal,71,0.025493,0.016602,0.010324,0.008027,0.633803,0.718310
+Volatilidade do Ibovespa no mês,nervoso,71,0.031069,0.022246,-0.001770,0.007567,0.676056,0.591549
+Juros (CDI no mês),baixos,72,0.042863,0.034022,0.007737,0.004677,0.722222,0.763889
+Juros (CDI no mês),médios,71,0.026421,0.017639,0.011085,0.008251,0.619718,0.676056
+Juros (CDI no mês),altos,71,0.025251,0.016220,0.010646,0.010801,0.619718,0.633803
+Força do sinal no começo do mês,fraco,71,0.018219,0.009465,0.008384,0.009528,0.619718,0.591549
+Força do sinal no começo do mês,médio,71,0.027745,0.018906,0.000216,0.008267,0.676056,0.690141
+Força do sinal no começo do mês,forte,71,0.049065,0.040004,0.020244,0.005845,0.676056,0.802817
+Ibovespa nos 3 meses anteriores,caindo,71,0.028978,0.020050,0.002447,0.008199,0.718310,0.633803
+Ibovespa nos 3 meses anteriores,de lado,70,0.023238,0.014336,0.010791,0.007878,0.585714,0.628571
+Ibovespa nos 3 meses anteriores,subindo,70,0.043332,0.034498,0.015618,0.007523,0.671429,0.828571

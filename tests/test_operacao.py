@@ -84,6 +84,17 @@ def test_escolha_usa_so_os_dados_ate_a_vespera():
     assert list(e.index) == ["T63", "T53", "T43", "T33", "T23"]
 
 
+def test_escolha_ignora_a_acao_que_so_teve_meia_duzia_de_noites_boas():
+    p = _painel_sintetico()
+    # TX3 fica parada de noite, menos em 5 noites de +20%: a média simples (cerca de 40 bp) a
+    # poria em primeiro; a média aparada (zero) a deixa de fora
+    x = p[p["ticker"] == "T03"].assign(ticker="TX3", nome="TX", r_overnight=0.0)
+    x.loc[x.index[-200:-195], "r_overnight"] = 0.20
+    e = op.escolha_para(pd.concat([p, x]), pd.Period("2026-11", "M"), pd.Timestamp("2026-10-28"))
+    assert list(e.index) == ["T63", "T53", "T43", "T33", "T23"]
+    assert e["noite_bp"].max() < 40  # a TX3 nem aparece entre as 5
+
+
 def test_conferir_mede_o_custo_em_relacao_ao_leilao():
     p = pd.DataFrame({"data": pd.to_datetime(["2026-11-03"] * 2), "ticker": ["A3", "B3"],
                       "abertura_acao": [10.0, 20.0], "fechamento_acao": [10.0, 20.0]})
