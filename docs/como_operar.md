@@ -10,7 +10,9 @@
 1. Você fica **comprado de noite** (do leilão de fechamento ao leilão de abertura do dia
    seguinte) em 5 ações grandes.
 2. Na versão completa, fica também **vendido durante o pregão** (do leilão de abertura ao de
-   fechamento) nas mesmas 5, sem aluguel de ações.
+   fechamento) nas mesmas 5, sem aluguel de ações. **Ela não é viável hoje para pessoa física:**
+   as corretoras exigem fechar o day trade antes do call de fechamento
+   ([`decisao.md`](decisao.md)). **A estratégia que vamos operar é a só noite.**
 3. As 5 são escolhidas uma vez por mês: entre as 50 mais líquidas, acima de R$ 5 e fora de
    recuperação judicial, as de **maior média aparada da noite nos últimos 12 meses** (a média sem
    as 5% piores e as 5% melhores noites). A escolha da regra está em [`so_noite.md`](so_noite.md).
@@ -152,21 +154,24 @@ antiga, com uma anualização que contava 61 meses em 5 anos.
 
 ## Parte 2. Quatro decisões antes de começar
 
-1. **Versão.** Comece pela **só noite**, que tem um relatório próprio
-   ([`so_noite.md`](so_noite.md)):
-   - não exige ficar vendido, não usa margem e não corre o risco de a corretora zerar o vendido
-     antes do leilão;
-   - rendeu menos nos últimos 5 anos (21% contra 29% ao ano, depois do IR), mas sofreu menos em
-     2025, ano de alta forte (14% contra 8,5%, antes do IR).
+1. **Versão: só noite.** A decisão, com os testes, está em [`decisao.md`](decisao.md).
+   - No papel, a completa é melhor depois do IR (29% contra 21% ao ano em 5 anos), mas o
+     backtest dela recompra o vendido no call de fechamento. Rico, Clear, BTG e Genial exigem
+     fechar o day trade antes do call.
+   - A só noite não fica vendida, não usa margem e não depende de regra de zeragem.
 
-   A completa entra depois, se a corretora passar no checklist da Parte 3.
+   A completa só volta se uma corretora confirmar, por escrito, que o vendido pode ser recomprado
+   no call, e se o capital passar de cerca de R$ 81 mil.
 2. **Capital.** As ações negociam em lotes de 100.
    - Com R$ 100 mil na versão só noite, cada ação recebe ~R$ 20 mil. Com os preços de 21/10/2026,
      isso dava 200 BPAC11 (R$ 16 mil) e 1.500 MGLU3 (R$ 19,6 mil); uns 8% ficam parados pelo
      arredondamento.
    - Na versão completa, cada perna de cada ação recebe R$ 10 mil, e a BPAC11 só cabe com 1 lote.
    - Abaixo de ~R$ 41 mil (só noite) ou ~R$ 81 mil (completa), a BPAC11, a R$ 80, não cabe em
-     lote de 100. O mercado fracionário existe, mas tem livro próprio e o preço pode diferir.
+     lote de 100.
+   - **Não use o mercado fracionário.** Em 2025 e 2026, a noite medida nos preços dele saiu 5 bp
+     pior que no lote padrão, em média, e 33 bp pior na MGLU3. É mais que todo o custo da
+     estratégia ([`decisao.md`](decisao.md), seção 2.2).
 3. **Corretora.** Ver Parte 3.
 4. **Automação.**
    - **Semiautomática (recomendada para começar):** o computador atualiza os dados, escolhe as 5,
@@ -179,7 +184,8 @@ antiga, com uma anualização que contava 61 meses em 5 anos.
 ## Parte 3. A corretora
 
 **Para a só noite, a escolha é a Rico.** A análise, com a tabela das corretoras e as fontes,
-está em [`so_noite.md`](so_noite.md), seção 10. O resumo:
+está em [`so_noite.md`](so_noite.md), seção 10. As regras de day trade que tiram a versão
+completa da mesa estão em [`decisao.md`](decisao.md), seção 2. O resumo:
 - **Custo:** corretagem zero em ações nas duas pontas, day trade e operação comum, nas ordens que
   você mesmo manda. A XP cobra R$ 4,90 por ordem na operação comum.
 - **Automação:** dois caminhos, o MetaTrader 5 (grátis para clientes) e o Profit com a

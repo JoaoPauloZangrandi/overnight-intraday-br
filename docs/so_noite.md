@@ -6,6 +6,10 @@ Gerado por `uv run python -m overnight_br.selecao` e `uv run python -m overnight
 
 > Isto é resultado de pesquisa com dados históricos, não recomendação de investimento.
 
+**Decisão final, depois deste relatório:** a só noite é a estratégia que vamos operar. O porquê,
+a comparação com a versão completa depois do IR e os testes com eventos bruscos estão em
+[`decisao.md`](decisao.md).
+
 **A pergunta:** e se a gente só operar a noite? Compra no leilão de fechamento, vende no leilão
 de abertura do dia seguinte e **nunca fica vendido**. À tarde compra de novo, e assim por diante.
 

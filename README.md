@@ -117,6 +117,25 @@ Custos, imposto, piso de preço, cenários, piores noites e a carteira de novemb
 
 ![so noite](results/so_noite_curvas.png)
 
+## A decisão: o que vamos operar
+
+**No papel,** a versão completa (comprada de noite e vendida de dia) é a melhor para pessoa
+física, depois do custo e do imposto: 29,3% ao ano em 5 anos, contra 20,6% da só noite.
+
+**Na prática, vamos operar a só noite.** O backtest da completa recompra o vendido no call de
+fechamento, e as corretoras exigem fechar o day trade antes do call. Além disso, a completa só
+cabe em lotes de 100 a partir de cerca de R$ 81 mil.
+
+Também testei:
+- **Eventos bruscos** (eleição, COVID, Joesley Day): três variantes da escolha das 5 para eles
+  (alfa, sem eventos, teto de beta). Nenhuma passou no critério fixado antes.
+- **O mercado de lado:** a completa vai melhor nele; a só noite vai melhor quanto mais a bolsa
+  sobe.
+
+Detalhes, corretora (Rico) e o plano da automação total: [`docs/decisao.md`](docs/decisao.md).
+
+![decisao](results/decisao_lateral_e_eventos.png)
+
 ## Como operar de verdade
 
 O manual completo está em [`docs/como_operar.md`](docs/como_operar.md): teoria, rotina
@@ -152,6 +171,7 @@ na data-ex. O motivo está em [`docs/tratamento_dos_precos.md`](docs/tratamento_
 | Passo 5. Pernas, carteira contra o Ibovespa e cenários | **Concluído**: [`docs/cenarios.md`](docs/cenarios.md) |
 | Passo 6. Operação: manual, boleta, papel e agendamento | **Concluído**: [`docs/como_operar.md`](docs/como_operar.md) |
 | Passo 7. Só noite: como escolher as 5, bateria completa e corretora | **Concluído**: [`docs/so_noite.md`](docs/so_noite.md) |
+| Passo 8. Decisão: qual estratégia operar, mercado de lado e eventos bruscos | **Concluído**: [`docs/decisao.md`](docs/decisao.md) |
 
 ## Dados
 
@@ -175,6 +195,7 @@ Requer [uv](https://docs.astral.sh/uv/). Python 3.12, fixado em `.python-version
     uv run python -m overnight_br.analise_carteira   # gráficos e cenários da carteira
     uv run python -m overnight_br.selecao            # as 180 regras de escolha das 5 (~5 min)
     uv run python -m overnight_br.so_noite           # a bateria da só noite (~10 min)
+    uv run python -m overnight_br.decisao            # a decisão: versões, lateral, eventos (~4 min)
     uv run python -m overnight_br.imposto_pf         # efeito do imposto de pessoa física
     uv run python -m overnight_br.operacao --help    # operação: escolha, boleta, papel, conferir
     uv run pytest
@@ -195,6 +216,7 @@ Os dois gravam em `results/` as figuras e as tabelas em CSV.
       analise_carteira.py  gráficos das pernas, contra o Ibovespa, e os cenários
       selecao.py       como escolher as 5: as 180 regras, o critério e a regra escolhida
       so_noite.py      a só noite: métricas, custo, piso, imposto, cenários e piores noites
+      decisao.py       qual versão operar, mercado de lado e eventos bruscos
       imposto_pf.py    o imposto de pessoa física, mês a mês
       operacao.py      operar: escolha do mês, boleta dos leilões, papel e conferência
     scripts/           agendamento da rotina no Windows

@@ -47,6 +47,10 @@ ARQUIVO_SINAIS = cotahist.PROCESSADO.parent / "selecao_sinais.parquet"
 # A regra que o critério escolheu (ver o resultado em docs/so_noite.md): sinal, universo, número
 # de ações e peso. A operação (operacao.escolha_para) aplica a mesma regra.
 ESCOLHIDA = ("aparada_12m", 50, 5, "igual")
+# Noite de evento: o mercado (a média das 50 mais líquidas) anda 2% ou mais de noite, cerca de 2
+# desvios-padrão. São 166 noites de 2006 a 2026, como a da COVID (12/03/2020, −15%) e a do dia
+# seguinte ao 1º turno de 2026 (05/10/2026, +6,7%). Fixado antes de testar as variantes.
+EVENTO = 0.02
 
 
 def media_aparada(r: pd.Series, corte: float = 0.05) -> float:
@@ -56,8 +60,20 @@ def media_aparada(r: pd.Series, corte: float = 0.05) -> float:
     return r[(r >= lo) & (r <= hi)].mean()
 
 
-def _estatisticas(janela: pd.DataFrame, ate: pd.Timestamp) -> pd.DataFrame:
-    """Todos os sinais de cada ticker, com as noites até `ate`."""
+def mercado_de_noite(p: pd.DataFrame, n: int = 50) -> pd.Series:
+    """A noite do mercado: a média, em cada data, das noites válidas das n mais líquidas do ano
+    (escolhidas com o volume do ano anterior). Tem 0,91 de correlação com a noite do BOVA11."""
+    cal = pd.DatetimeIndex(np.sort(p["data"].unique()))
+    u = universo.escolher(p, cal, n=n)
+    x = p[["ticker", "data", "r_overnight"]].assign(ano=p["data"].dt.year)
+    x = x.merge(u[["ano", "ticker"]], on=["ano", "ticker"])
+    return x.groupby("data")["r_overnight"].mean().dropna()
+
+
+def _estatisticas(janela: pd.DataFrame, ate: pd.Timestamp,
+                  mercado: pd.Series | None = None) -> pd.DataFrame:
+    """Todos os sinais de cada ticker, com as noites até `ate`. Com a noite do mercado, também
+    o beta de noite, o alfa (a noite sem o efeito do mercado) e a média sem as noites de evento."""
     linhas = {}
     for ticker, g in janela.groupby("ticker"):
         r = g.set_index("data")["r_overnight"].dropna()
@@ -78,11 +94,20 @@ def _estatisticas(janela: pd.DataFrame, ate: pd.Timestamp) -> pd.DataFrame:
             "exponencial": float(np.average(r, weights=pesos)),
             "vol_12m": r12.std(),
         }
+        if mercado is not None:
+            m12 = mercado.reindex(r12.index)
+            beta = r12.cov(m12) / m12.var()
+            linhas[ticker] |= {
+                "beta_12m": beta,
+                "alfa_12m": media_aparada(r12 - beta * m12),
+                "aparada_sem_eventos": media_aparada(r12[m12.abs() < EVENTO]),
+            }
     return pd.DataFrame.from_dict(linhas, orient="index")
 
 
 def tabela_de_sinais(p: pd.DataFrame, desde: str = "2006-01",
-                     preco_minimo: float = carteira.PRECO_MINIMO) -> pd.DataFrame:
+                     preco_minimo: float = carteira.PRECO_MINIMO,
+                     mercado: pd.Series | None = None) -> pd.DataFrame:
     """Para cada mês: os candidatos (as 100 mais líquidas que passam nas travas) e todos os
     sinais, decididos no último pregão do mês anterior com os dados até a véspera."""
     cal = pd.DatetimeIndex(np.sort(p["data"].unique()))
@@ -103,7 +128,7 @@ def tabela_de_sinais(p: pd.DataFrame, desde: str = "2006-01",
         membros = membros[membros["ticker"].isin(ok.index)]
         janela = base[base["ticker"].isin(membros["ticker"])
                       & (base["data"] > ate - pd.DateOffset(months=24)) & (base["data"] <= ate)]
-        est = _estatisticas(janela, ate)
+        est = _estatisticas(janela, ate, mercado)
         if est.empty:
             continue
         est = est.join(membros.set_index("ticker")["posicao"], how="inner")
@@ -111,9 +136,13 @@ def tabela_de_sinais(p: pd.DataFrame, desde: str = "2006-01",
     return pd.concat(partes, ignore_index=True)
 
 
-def escolher(tab: pd.DataFrame, sinal: str, n_universo: int, n: int, peso: str) -> pd.DataFrame:
-    """(mês, ticker, peso) da regra."""
+def escolher(tab: pd.DataFrame, sinal: str, n_universo: int, n: int, peso: str,
+             teto_beta: float | None = None) -> pd.DataFrame:
+    """(mês, ticker, peso) da regra. Com `teto_beta` (um quantil, como 0,8), tira antes as
+    ações de beta de noite acima desse quantil entre as do universo, naquele mês."""
     t = tab[tab["posicao"] <= n_universo].copy()
+    if teto_beta is not None:
+        t = t[t["beta_12m"] <= t.groupby("mes")["beta_12m"].transform("quantile", teto_beta)]
     if sinal == "conjunto":
         partes = ["media_12m", "sharpe_12m", "mediana_12m", "acertos_12m"]
         t["conjunto"] = t.groupby("mes")[partes].rank(ascending=False).mean(axis=1) * -1
@@ -184,7 +213,7 @@ def main() -> None:
     cal = pd.DatetimeIndex(np.sort(p["data"].unique()))
     cdi = backtest.cdi_por_pregao(backtest.cdi(), cal)
     ibov = backtest.ibovespa(pd.Timestamp("2008-01-01"))
-    tab = tabela_de_sinais(p)
+    tab = tabela_de_sinais(p, mercado=mercado_de_noite(p))
     tab.to_parquet(ARQUIVO_SINAIS, index=False)
 
     linhas = []
