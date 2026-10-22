@@ -20,3 +20,6 @@ data/processed/*
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Operação real: posições, boletas e execuções pessoais. Nunca no repositório público
+data/operacao/

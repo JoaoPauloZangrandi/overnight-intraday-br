@@ -92,6 +92,17 @@ As duas pernas das ações, a carteira contra o Ibovespa e os cenários: [`docs/
 
 ![carteira](results/carteira_curvas.png)
 
+## Como operar de verdade
+
+O manual completo está em [`docs/como_operar.md`](docs/como_operar.md): teoria, rotina
+minuto a minuto, como mandar ordens nos leilões, checklist de corretora, imposto de pessoa
+física, plano em fases e regras para parar. As ferramentas ficam em
+[`src/overnight_br/operacao.py`](src/overnight_br/operacao.py), e o agendamento no Windows em
+[`scripts/agendar_windows.ps1`](scripts/agendar_windows.ps1). Elas atualizam os dados, escolhem
+a carteira do mês, montam a boleta de cada leilão, rodam o teste em papel e conferem as
+execuções. O envio das ordens fica com você até um executor ser escrito e testado para a sua
+corretora.
+
 ## A conta
 
 Para cada ação e pregão, com os preços crus do COTAHIST divididos pela unidade de cotação:
@@ -114,6 +125,7 @@ na data-ex. O motivo está em [`docs/tratamento_dos_precos.md`](docs/tratamento_
 | Passo 3. Busca por uma versão que pague o custo | **Concluído**: [`docs/busca.md`](docs/busca.md) |
 | Passo 4. A carteira de 5 ações | **Concluído**: [`docs/carteira.md`](docs/carteira.md) |
 | Passo 5. Pernas, carteira contra o Ibovespa e cenários | **Concluído**: [`docs/cenarios.md`](docs/cenarios.md) |
+| Passo 6. Operação: manual, boleta, papel e agendamento | **Concluído**: [`docs/como_operar.md`](docs/como_operar.md) |
 
 ## Dados
 
@@ -135,6 +147,8 @@ Requer [uv](https://docs.astral.sh/uv/). Python 3.12, fixado em `.python-version
     uv run python -m overnight_br.busca      # as 315 tentativas (~2 min)
     uv run python -m overnight_br.carteira   # a carteira de 5 ações e a lista de hoje
     uv run python -m overnight_br.analise_carteira   # gráficos e cenários da carteira
+    uv run python -m overnight_br.imposto_pf         # efeito do imposto de pessoa física
+    uv run python -m overnight_br.operacao --help    # operação: escolha, boleta, papel, conferir
     uv run pytest
 
 Os dois gravam em `results/` as figuras e as tabelas em CSV.
@@ -151,6 +165,9 @@ Os dois gravam em `results/` as figuras e as tabelas em CSV.
       busca.py         a busca: classes de ativo, estratégias, janelas e o registro de tentativas
       carteira.py      a carteira de 5 ações: regra, as duas pernas e a lista de hoje
       analise_carteira.py  gráficos das pernas, contra o Ibovespa, e os cenários
+      imposto_pf.py    o imposto de pessoa física, mês a mês
+      operacao.py      operar: escolha do mês, boleta dos leilões, papel e conferência
+    scripts/           agendamento da rotina no Windows
     data/              bruto e processado; fora do git, o pipeline refaz
     results/           tabelas e figuras
     docs/              literatura, tratamento dos preços, resultados

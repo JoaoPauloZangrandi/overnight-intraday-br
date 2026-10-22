@@ -12,9 +12,10 @@ Uso: python -m overnight_br.cotahist 1995 2026
 from __future__ import annotations
 
 import sys
+import urllib.error
 import urllib.request
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +24,9 @@ RAIZ = Path(__file__).resolve().parents[2]
 RAW = RAIZ / "data" / "raw" / "cotahist"
 PROCESSADO = RAIZ / "data" / "processed" / "cotahist"
 URL = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A{ano}.ZIP"
+# Um pregão só, cerca de 600 KB. Medido em 22/10/2026: o arquivo anual do ano corrente
+# (~95 MB) levou 149 minutos para baixar, então o ano corrente se atualiza pelos diários.
+URL_DIA = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_D{dia:%d%m%Y}.ZIP"
 
 # Registro tipo 01, manual da B3 (SeriesHistoricas_Layout). (nome, início 1-based, tamanho, tipo)
 # 'v99' = inteiro com duas casas decimais implícitas.
@@ -60,7 +64,7 @@ GUARDAR = ["data", "codbdi", "ticker", "nome", "especi", "modref", "abertura", "
 
 
 def baixar(ano: int, *, forcar: bool = False) -> Path:
-    """Baixa o ZIP anual. O ano corrente muda todo dia, então ele é sempre rebaixado."""
+    """Baixa o ZIP anual."""
     destino = RAW / f"COTAHIST_A{ano}.ZIP"
     if destino.exists() and not forcar:
         return destino
@@ -99,13 +103,54 @@ def ler(caminho: Path) -> pd.DataFrame:
     return df
 
 
+def baixar_dia(dia: date) -> Path | None:
+    """Baixa o arquivo de um pregão. A B3 o publica entre a noite do pregão e a manhã
+    seguinte; antes disso, em feriado ou fim de semana, o endereço não existe: None."""
+    destino = RAW / "diario" / f"COTAHIST_D{dia:%d%m%Y}.ZIP"
+    if destino.exists():
+        return destino
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    pedido = urllib.request.Request(URL_DIA.format(dia=dia), headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(pedido, timeout=300) as resp:
+            conteudo = resp.read()
+    except urllib.error.HTTPError as erro:
+        if erro.code == 404:
+            return None
+        raise
+    destino.write_bytes(conteudo)
+    zipfile.ZipFile(destino).testzip()
+    return destino
+
+
+def incluir_pregoes_novos(ano: int) -> list[date]:
+    """Acrescenta ao parquet do ano os pregões que vieram depois do último que ele tem."""
+    destino = PROCESSADO / f"{ano}.parquet"
+    atual = pd.read_parquet(destino)
+    ultimo = atual["data"].max().date()
+    fim = min(date.today(), date(ano, 12, 31))
+    novos = []
+    for dia in pd.bdate_range(ultimo + timedelta(days=1), fim).date:
+        caminho = baixar_dia(dia)
+        if caminho is not None:
+            novos.append(ler(caminho))
+    if novos:
+        tudo = pd.concat([atual, *novos], ignore_index=True)
+        tudo = tudo.drop_duplicates(["data", "codbdi", "ticker"], keep="last")
+        tudo.sort_values(["data", "ticker"]).to_parquet(destino, index=False)
+    return sorted({d.date() for n in novos for d in n["data"].unique()})
+
+
 def processar(ano: int, *, forcar: bool = False) -> Path:
-    """Baixa (se preciso), lê e grava data/processed/cotahist/{ano}.parquet."""
+    """Baixa (se preciso), lê e grava data/processed/cotahist/{ano}.parquet. O ano corrente,
+    se já existe, só ganha os pregões novos, pelos arquivos diários."""
     destino = PROCESSADO / f"{ano}.parquet"
     ano_corrente = ano == date.today().year
-    if destino.exists() and not forcar and not ano_corrente:
+    if destino.exists() and not forcar:
+        if ano_corrente:
+            incluir_pregoes_novos(ano)
         return destino
-    df = ler(baixar(ano, forcar=forcar or ano_corrente))
+    df = ler(baixar(ano, forcar=forcar))
     PROCESSADO.mkdir(parents=True, exist_ok=True)
     df.to_parquet(destino, index=False)
     return destino
