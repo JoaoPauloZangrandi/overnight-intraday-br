@@ -69,6 +69,24 @@ com a ação caindo 99,8%) estão em [`docs/busca.md`](docs/busca.md).
 
 ![busca](results/busca_principal.png)
 
+## A carteira: 5 ações grandes, comprada de noite e vendida de dia
+
+Todo mês, as 5 ações das 50 mais líquidas (preço acima de R$ 5, fora de recuperação judicial)
+com a noite mais forte nos 12 meses anteriores. Metade do dinheiro compra no leilão de
+fechamento e vende no de abertura. A outra metade vende no leilão de abertura e recompra no de
+fechamento (day trade).
+
+| Últimos 5 anos | Ibovespa | Carteira, custo de mesa | Carteira, custo de fundo | As mesmas 5, compradas e seguradas |
+|---|---|---|---|---|
+| Retorno ao ano | 14,0% | **34,8%** | **22,0%** | −4,6% |
+| Volatilidade | 18,3% | **15,3%** | **15,3%** | 31,5% |
+| Pior queda | −21% | −11% | −19% | −50% |
+
+Atinge o objetivo na média de 5, 10 e 20 anos, mas **2025 e 2026 foram fracos**. Passo a
+passo do trade, intuição, carteira atual e riscos: [`docs/carteira.md`](docs/carteira.md).
+
+![carteira](results/carteira_curvas.png)
+
 ## A conta
 
 Para cada ação e pregão, com os preços crus do COTAHIST divididos pela unidade de cotação:
@@ -89,6 +107,7 @@ na data-ex. O motivo está em [`docs/tratamento_dos_precos.md`](docs/tratamento_
 | Passo 1. Overnight vs intraday, 100 mais líquidas | **Concluído**: [`docs/resultados_passo1.md`](docs/resultados_passo1.md) |
 | Passo 2. Backtest de um fundo, com custos reais | **Concluído**: [`docs/backtest.md`](docs/backtest.md) |
 | Passo 3. Busca por uma versão que pague o custo | **Concluído**: [`docs/busca.md`](docs/busca.md) |
+| Passo 4. A carteira de 5 ações | **Concluído**: [`docs/carteira.md`](docs/carteira.md) |
 
 ## Dados
 
@@ -108,6 +127,7 @@ Requer [uv](https://docs.astral.sh/uv/). Python 3.12, fixado em `.python-version
     uv run python -m overnight_br.pipeline   # baixa ~700 MB da B3 na primeira vez
     uv run python -m overnight_br.backtest   # baixa o CDI do Banco Central
     uv run python -m overnight_br.busca      # as 315 tentativas (~2 min)
+    uv run python -m overnight_br.carteira   # a carteira de 5 ações e a lista de hoje
     uv run pytest
 
 Os dois gravam em `results/` as figuras e as tabelas em CSV.
@@ -122,6 +142,7 @@ Os dois gravam em `results/` as figuras e as tabelas em CSV.
       pipeline.py      tudo de ponta a ponta
       backtest.py      o fundo: estratégias, custos da B3, métricas contra Ibovespa e CDI
       busca.py         a busca: classes de ativo, estratégias, janelas e o registro de tentativas
+      carteira.py      a carteira de 5 ações: regra, as duas pernas e a lista de hoje
     data/              bruto e processado; fora do git, o pipeline refaz
     results/           tabelas e figuras
     docs/              literatura, tratamento dos preços, resultados
