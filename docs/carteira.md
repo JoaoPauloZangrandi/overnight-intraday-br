@@ -8,6 +8,9 @@ Gerado por `uv run python -m overnight_br.carteira` (depois do pipeline), com da
 **Objetivo:** cerca de 5 ações grandes e líquidas, com retorno acima do Ibovespa e volatilidade
 menor.
 
+Os gráficos das duas pernas, a carteira contra o Ibovespa e a análise de cenários estão em
+[`cenarios.md`](cenarios.md).
+
 **Resposta curta:** a regra atinge o objetivo na média de 5, 10 e 20 anos. Mas os dois últimos
 anos foram fracos, e o resultado depende muito do custo de execução.
 

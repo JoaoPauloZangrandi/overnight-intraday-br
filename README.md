@@ -85,6 +85,11 @@ fechamento (day trade).
 Atinge o objetivo na média de 5, 10 e 20 anos, mas **2025 e 2026 foram fracos**. Passo a
 passo do trade, intuição, carteira atual e riscos: [`docs/carteira.md`](docs/carteira.md).
 
+**Cenários:** a carteira ganha do Ibovespa em todos os meses de queda forte da bolsa e perde em
+quase todos os de alta forte, porque a perna vendida apanha quando o pregão sobe. Metade carteira e
+metade Ibovespa rendeu 25% ao ano nos últimos 5 anos (custo de mesa), com 10% de volatilidade.
+As duas pernas das ações, a carteira contra o Ibovespa e os cenários: [`docs/cenarios.md`](docs/cenarios.md).
+
 ![carteira](results/carteira_curvas.png)
 
 ## A conta
@@ -108,6 +113,7 @@ na data-ex. O motivo está em [`docs/tratamento_dos_precos.md`](docs/tratamento_
 | Passo 2. Backtest de um fundo, com custos reais | **Concluído**: [`docs/backtest.md`](docs/backtest.md) |
 | Passo 3. Busca por uma versão que pague o custo | **Concluído**: [`docs/busca.md`](docs/busca.md) |
 | Passo 4. A carteira de 5 ações | **Concluído**: [`docs/carteira.md`](docs/carteira.md) |
+| Passo 5. Pernas, carteira contra o Ibovespa e cenários | **Concluído**: [`docs/cenarios.md`](docs/cenarios.md) |
 
 ## Dados
 
@@ -128,6 +134,7 @@ Requer [uv](https://docs.astral.sh/uv/). Python 3.12, fixado em `.python-version
     uv run python -m overnight_br.backtest   # baixa o CDI do Banco Central
     uv run python -m overnight_br.busca      # as 315 tentativas (~2 min)
     uv run python -m overnight_br.carteira   # a carteira de 5 ações e a lista de hoje
+    uv run python -m overnight_br.analise_carteira   # gráficos e cenários da carteira
     uv run pytest
 
 Os dois gravam em `results/` as figuras e as tabelas em CSV.
@@ -143,6 +150,7 @@ Os dois gravam em `results/` as figuras e as tabelas em CSV.
       backtest.py      o fundo: estratégias, custos da B3, métricas contra Ibovespa e CDI
       busca.py         a busca: classes de ativo, estratégias, janelas e o registro de tentativas
       carteira.py      a carteira de 5 ações: regra, as duas pernas e a lista de hoje
+      analise_carteira.py  gráficos das pernas, contra o Ibovespa, e os cenários
     data/              bruto e processado; fora do git, o pipeline refaz
     results/           tabelas e figuras
     docs/              literatura, tratamento dos preços, resultados
