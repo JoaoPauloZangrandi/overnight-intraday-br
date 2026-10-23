@@ -142,3 +142,45 @@ def test_pedido_ao_mt5_arredonda_o_limite_a_favor_da_execucao():
     assert conta.posicoes() == {"AAAA3": 300, "BBBB3": -200}
     with pytest.raises(Exception, match="múltiplo"):
         conta.requisicao(Ordem("AAAA3", COMPRA, 150, 10.0))
+
+
+class _FakeMT5Conta(_FakeMT5):
+    """O MT5 de mentira, logado numa conta de tipo escolhido (0 demo, 2 real)."""
+
+    def __init__(self, tipo=0, retcode=10009):
+        self.tipo, self.retcode, self.desligou = tipo, retcode, False
+
+    def account_info(self):
+        return SimpleNamespace(login=1, server="demo", balance=0.0, trade_mode=self.tipo)
+
+    def order_send(self, pedido):
+        return SimpleNamespace(retcode=self.retcode, comment="", order=7)
+
+    def last_error(self):
+        return (0, "")
+
+    def shutdown(self):
+        self.desligou = True
+
+
+def test_modo_demo_nao_opera_conta_real_e_vice_versa():
+    with pytest.raises(ConnectionError, match="conta real"):
+        MetaTrader5("noite", "t.exe", mt5=_FakeMT5Conta(tipo=2), tipo_esperado="demo")
+    with pytest.raises(ConnectionError, match="conta demo"):
+        MetaTrader5("noite", "t.exe", mt5=_FakeMT5Conta(tipo=0), tipo_esperado="real")
+    assert MetaTrader5("noite", "t.exe", mt5=_FakeMT5Conta(tipo=0), tipo_esperado="demo")
+
+
+def test_algo_trading_desligado_vira_mensagem_clara():
+    conta = MetaTrader5("noite", "t.exe", mt5=_FakeMT5Conta(retcode=10027), tipo_esperado="demo")
+    with pytest.raises(Exception, match="Algo Trading"):
+        conta.enviar(Ordem("AAAA3", COMPRA, 100, 10.0))
+
+
+def test_cada_modo_tem_sua_pasta(tmp_path, monkeypatch):
+    monkeypatch.setattr(executor.operacao, "PASTA", tmp_path)
+    for modo, pasta in (("demo", "execucao_demo"), ("real", "execucao"),
+                        ("simulado", "execucao_simulado")):
+        executor.usar_pasta(modo)
+        assert executor.PASTA == tmp_path / pasta
+        assert executor.LIVRO_NOITE == tmp_path / pasta / "livro_noite.json"

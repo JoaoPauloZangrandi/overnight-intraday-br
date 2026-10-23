@@ -29,9 +29,16 @@ Travas:
 - o arquivo data/operacao/PARAR desliga tudo;
 - cada etapa roda uma vez por pregão e só dentro da sua janela de horário.
 
+Os três modos (no config.toml):
+- "simulado": nenhuma corretora; as ordens executam ao preço de referência;
+- "demo": o terminal MT5 da conta de demonstração. Ordens de verdade, dinheiro de mentira;
+- "real": o terminal MT5 da conta real.
+O executor confere o tipo da conta logada no terminal: em "demo" ele se recusa a operar numa conta
+real, e em "real" numa de demonstração. Cada modo guarda estado e livro numa pasta própria.
+
 Configuração em data/operacao/config.toml, fora do git. Para criar o modelo:
   uv run python -m overnight_br.executor modelo
-Depois: teste (conecta e mostra as contas, sem ordens), status, e as etapas acima.
+Depois: checar (confere tudo, sem ordens), status, e as etapas acima.
 """
 from __future__ import annotations
 
@@ -41,6 +48,7 @@ import time as relogio
 import tomllib
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
+from pathlib import Path
 
 import pandas as pd
 
@@ -55,17 +63,18 @@ from overnight_br.corretora import (
     Simulada,
 )
 
-PASTA = operacao.PASTA / "execucao"  # o modo simulado usa execucao_simulado (usar_pasta)
+PASTA = operacao.PASTA / "execucao"  # simulado e demo usam pastas próprias (usar_pasta)
 CONFIG = operacao.PASTA / "config.toml"
 PARAR = operacao.PASTA / "PARAR"
 LIVRO_NOITE = PASTA / "livro_noite.json"  # o que o executor comprou e ainda tem na noite
 ETAPAS = ("abertura", "conferir", "cobrir", "call", "fim")
+MODOS = ("simulado", "demo", "real")
 FOLGA_COBERTURA = 0.003  # recompra até 0,3% acima da melhor oferta de venda
 FOLGA_CONTINUO = 0.003  # venda no contínuo até 0,3% abaixo da melhor oferta de compra
 
 MODELO = """\
 # Configuração do executor. Fica em data/operacao, fora do git. Nunca publique este arquivo.
-modo = "simulado"          # "simulado" não manda nada; "real" manda ordens de verdade
+modo = "simulado"          # "simulado" (sem corretora), "demo" (conta de demonstração) ou "real"
 capital_noite = 50000.0    # R$ da perna da noite (conta Posição da Rico)
 capital_dia = 0.0          # R$ vendidos de dia (MT5 day trade da Genial); 0 = só noite
 teto_por_ordem = 15000.0   # R$: uma ordem maior que isso não sai
@@ -104,8 +113,8 @@ class Config:
             raise FileNotFoundError(f"crie a configuração com `executor modelo` ({caminho})")
         with open(caminho, "rb") as f:
             cfg = cls(**tomllib.load(f))
-        if cfg.modo not in ("simulado", "real"):
-            raise ValueError(f"modo deve ser 'simulado' ou 'real', não {cfg.modo!r}")
+        if cfg.modo not in MODOS:
+            raise ValueError(f"modo deve ser um de {MODOS}, não {cfg.modo!r}")
         return cfg
 
 
@@ -145,9 +154,10 @@ def arquivo_do_dia(d: date):
 
 
 def usar_pasta(modo: str) -> None:
-    """O simulado guarda estado e livro numa pasta própria, para nunca se misturar com o real."""
+    """Cada modo guarda estado e livro numa pasta própria, para nunca se misturarem."""
     global PASTA, LIVRO_NOITE
-    PASTA = operacao.PASTA / ("execucao" if modo == "real" else "execucao_simulado")
+    PASTA = operacao.PASTA / {"real": "execucao", "demo": "execucao_demo",
+                              "simulado": "execucao_simulado"}[modo]
     LIVRO_NOITE = PASTA / "livro_noite.json"
     PASTA.mkdir(parents=True, exist_ok=True)
 
@@ -294,7 +304,8 @@ def conectar(cfg: Config, qual: str, precos: dict[str, float]) -> Corretora:
     if cfg.modo == "simulado":
         return _simulada(qual, precos)
     c = getattr(cfg, qual)
-    return MetaTrader5(qual, c["terminal"], c.get("login"), c.get("senha"), c.get("servidor"))
+    return MetaTrader5(qual, c["terminal"], c.get("login"), c.get("senha"), c.get("servidor"),
+                       tipo_esperado=cfg.modo)
 
 
 def _fechar(conta: Corretora, precos: dict[str, float], hoje: date) -> None:
@@ -490,11 +501,87 @@ def teste(cfg: Config, p: pd.DataFrame) -> None:
     print(f"janelas de hoje: {horarios}")
 
 
+def checar() -> list[tuple[str, bool, str]]:
+    """Confere, item a item, o que a automação precisa, sem mandar ordem. Imprime e devolve
+    (item, ok, detalhe)."""
+    itens = []
+
+    def item(nome: str, ok: bool, detalhe: str = "") -> bool:
+        itens.append((nome, ok, detalhe))
+        print(f"[{'ok' if ok else 'FALTA'}] {nome}" + (f": {detalhe}" if detalhe else ""))
+        return ok
+
+    try:
+        import MetaTrader5  # noqa: F401
+        item("pacote MetaTrader5 instalado", True)
+    except ImportError:
+        item("pacote MetaTrader5 instalado", False, "rode: uv sync --extra mt5")
+    if not item("config.toml existe", CONFIG.exists(), str(CONFIG) if CONFIG.exists()
+                else "rode: uv run python -m overnight_br.executor modelo"):
+        return itens
+    try:
+        cfg = Config.ler()
+    except (ValueError, TypeError, tomllib.TOMLDecodeError) as e:
+        item("config.toml válido", False, str(e))
+        return itens
+    item("config.toml válido", True, f"modo {cfg.modo}, noite R$ {cfg.capital_noite:,.0f}, "
+         f"dia R$ {cfg.capital_dia:,.0f}")
+    item("tópico do ntfy (avisos no celular)", bool(cfg.ntfy_topico),
+         "chegou um aviso de teste no celular?" if cfg.ntfy_topico else "preencha ntfy_topico")
+    if cfg.ntfy_topico:
+        alertas.avisar("Teste do executor", "Se você está lendo isto, os avisos funcionam.",
+                       "info", cfg.ntfy_topico)
+    contas = ("noite", "dia") if cfg.capital_dia > 0 else ("noite",)
+    if cfg.modo != "simulado":
+        for qual in contas:
+            caminho = getattr(cfg, qual).get("terminal", "")
+            item(f"terminal MT5 da conta {qual} existe", bool(caminho) and Path(caminho).exists(),
+                 caminho or "preencha [" + qual + "] terminal")
+    p = operacao._carregar()
+    ultimo = p["data"].max().date()
+    hoje = date.today()
+    vespera = hoje - pd.Timedelta(days=1)
+    while not operacao.eh_pregao(vespera):
+        vespera -= pd.Timedelta(days=1)
+    item("dados atualizados", ultimo >= vespera, f"último pregão nos dados: {ultimo:%d/%m/%Y}"
+         + ("" if ultimo >= vespera else " (rode: uv run python -m overnight_br.operacao "
+                                          "atualizar)"))
+    alvo = carteira(p, hoje, para_a_noite=operacao.ultimo_pregao_do_mes(hoje))
+    item("carteira do mês", len(alvo) == 5, ", ".join(alvo))
+    fuso = datetime.now().astimezone().utcoffset()
+    item("relógio no horário de Brasília", fuso == pd.Timedelta(hours=-3),
+         f"UTC{fuso.total_seconds() / 3600:+.0f}")
+    if cfg.modo != "simulado":
+        ref = precos_de_referencia(p)
+        for qual in contas:
+            try:
+                conta = conectar(cfg, qual, ref)
+            except Exception as e:  # noqa: BLE001 - a mensagem diz o que falta
+                item(f"conexão com a conta {qual}", False, str(e))
+                continue
+            c = conta.conta
+            item(f"conexão com a conta {qual}", True,
+                 f"login {c.login}, {c.server}, saldo R$ {c.balance:,.2f}")
+            for t in alvo:
+                try:
+                    info = conta._simbolo(t)
+                    cot = conta.cotacao(t)
+                    item(f"  {t} no MT5", info.volume_step in (1, 100),
+                         f"lote {info.volume_step:g}, tick {info.trade_tick_size:g}, "
+                         f"último {cot['ultimo']}")
+                except ErroDeOrdem as e:
+                    item(f"  {t} no MT5", False, str(e))
+            conta.fechar()
+    faltam = [n for n, ok, _ in itens if not ok]
+    print("\nTudo certo." if not faltam else f"\nFaltam {len(faltam)} item(ns): {faltam}")
+    return itens
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("comando", choices=("modelo", "teste", "status", "parar", "retomar")
-                    + ETAPAS)
+    ap.add_argument("comando", choices=("modelo", "checar", "teste", "status", "parar",
+                                        "retomar") + ETAPAS)
     ap.add_argument("--forcar-horario", action="store_true",
                     help="ignora a janela de horário (só no modo simulado)")
     a = ap.parse_args()
@@ -516,6 +603,9 @@ def main() -> None:
         print("executor retomado.")
         return
 
+    if a.comando == "checar":
+        checar()
+        return
     cfg = Config.ler()
     usar_pasta(cfg.modo)
     p = operacao._carregar()
@@ -529,7 +619,7 @@ def main() -> None:
         print(json.dumps(_ler_json(arquivo_do_dia(date.today()), {}), indent=2,
                          ensure_ascii=False))
         return
-    if a.forcar_horario and cfg.modo == "real":
+    if a.forcar_horario and cfg.modo != "simulado":
         raise SystemExit("--forcar-horario só vale no modo simulado")
     rodar(a.comando, cfg, p, datetime.now(), forcar_horario=a.forcar_horario)
 

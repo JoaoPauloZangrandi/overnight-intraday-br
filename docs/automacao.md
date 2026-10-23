@@ -87,6 +87,9 @@ O capital fica metade em cada uma:
 
 ## 4. O que você faz, em ordem
 
+O guia detalhado, com os pontos de parada, está em [`passo_a_passo.md`](passo_a_passo.md). O
+resumo:
+
 1. **Rico:**
    - abra a conta;
    - em Ferramentas → MetaTrader, contrate primeiro a **conta de demonstração** e depois a
@@ -107,11 +110,13 @@ O capital fica metade em cada uma:
 
    - edite `data/operacao/config.toml` (fora do git): caminho de cada terminal, capital de cada
      perna e o tópico do ntfy;
-   - deixe `modo = "simulado"` até a fase 3.
+   - `modo = "simulado"` na fase 1, `"demo"` na fase 2 e `"real"` da fase 3 em diante. O
+     executor confere o tipo da conta logada e se recusa a operar se não bater com o modo.
 4. **No celular:** instale o app ntfy e assine um tópico de nome longo e aleatório, o mesmo do
    config.
-5. **Teste sem ordem:** `uv run python -m overnight_br.executor teste` conecta nas contas e mostra
-   saldo, posição, tick e lote de cada ação.
+5. **Teste sem ordem:** `uv run python -m overnight_br.executor checar` confere tudo, item a item:
+   pacote, configuração, ntfy, terminal, dados, carteira, relógio, conexão, tick e lote de cada
+   ação.
 6. **Agende:** `powershell -ExecutionPolicy Bypass -File scripts\agendar_windows.ps1 -Capital
    100000 -Executor`.
 
@@ -120,7 +125,7 @@ O capital fica metade em cada uma:
 | Fase | O que roda | Para avançar |
 |---|---|---|
 | 1. Simulado | o executor inteiro no agendador, sem corretora | 2 semanas sem erro de rotina |
-| 2. Demonstração da Rico | `modo = "real"` apontando para o MT5 de demonstração, só a noite | 2 semanas: ordens aceitas no pré-leilão e no call, execuções iguais às da boleta |
+| 2. Demonstração da Rico | `modo = "demo"`, com o MT5 de demonstração, só a noite | 2 semanas: ordens aceitas no pré-leilão e no call, execuções iguais às da boleta |
 | 3. Rico, dinheiro pequeno | conta Posição, `capital_noite = 20000` | 1 mês com custo medido abaixo de ~1,5 bp por lado além da tarifa (`operacao conferir`) |
 | 4. Rico, capital da noite | `capital_noite` no valor pretendido | 1 mês sem erro |
 | 5. Genial, dia pequeno | `capital_dia = 10000` | 1 mês: vendas no leilão aceitas, recompra sempre antes das 16h40 |
@@ -129,7 +134,8 @@ O capital fica metade em cada uma:
 ## 6. Comandos
 
     uv run python -m overnight_br.executor modelo     # cria o config.toml (uma vez)
-    uv run python -m overnight_br.executor teste      # conecta e mostra, sem ordens
+    uv run python -m overnight_br.executor checar     # confere tudo, item a item, sem ordens
+    uv run python -m overnight_br.executor teste      # conecta e mostra as contas, sem ordens
     uv run python -m overnight_br.executor status     # o que já rodou hoje e o livro da noite
     uv run python -m overnight_br.executor parar      # trava tudo (cria data/operacao/PARAR)
     uv run python -m overnight_br.executor retomar

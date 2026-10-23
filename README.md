@@ -177,7 +177,8 @@ O executor ([`executor.py`](src/overnight_br/executor.py)) manda as ordens dos l
 - avisa no celular pelo ntfy;
 - tem travas: modo simulado por padrão, teto por ordem, uma vez por etapa e arquivo `PARAR`.
 
-Decisão, fontes, passo a passo e fases: [`docs/automacao.md`](docs/automacao.md).
+Decisão, fontes e fases: [`docs/automacao.md`](docs/automacao.md). O guia para abrir as contas e
+ligar tudo, com os pontos de parada: [`docs/passo_a_passo.md`](docs/passo_a_passo.md).
 
 ## E com opções?
 

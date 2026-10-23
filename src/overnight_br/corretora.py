@@ -19,7 +19,7 @@ import itertools
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 COMPRA, VENDA = "compra", "venda"
 
@@ -143,10 +143,12 @@ class MetaTrader5:
     salva nele) ou do arquivo local de configuração, que fica fora do git."""
 
     RETCODES_OK = (10008, 10009, 10010)  # PLACED, DONE, DONE_PARTIAL
+    ALGO_DESLIGADO = 10027  # TRADE_RETCODE_CLIENT_DISABLES_AT
+    TIPOS: ClassVar[dict[str, tuple[int, ...]]] = {"demo": (0, 1), "real": (2,)}  # DEMO, CONTEST, REAL
 
     def __init__(self, nome: str, terminal: str, login: int | None = None,
                  senha: str | None = None, servidor: str | None = None,
-                 magic: int = 20261023, mt5=None):
+                 magic: int = 20261023, mt5=None, tipo_esperado: str | None = None):
         if mt5 is None:
             import MetaTrader5 as mt5  # só existe no Windows: uv sync --extra mt5
         self.mt5, self.nome, self.magic = mt5, nome, magic
@@ -160,6 +162,11 @@ class MetaTrader5:
             raise ConnectionError(f"{nome}: sem conta logada no terminal")
         if not terminal_info.trade_allowed:
             raise ConnectionError(f"{nome}: o botão 'Algo Trading' do terminal está desligado")
+        if tipo_esperado and conta.trade_mode not in self.TIPOS[tipo_esperado]:
+            mt5.shutdown()
+            raise ConnectionError(
+                f"{nome}: o terminal está numa conta {'real' if conta.trade_mode == 2 else 'demo'}"
+                f", mas o config.toml diz modo = \"{tipo_esperado}\". Nada foi enviado.")
         self.conta = conta
 
     def _simbolo(self, ticker: str):
@@ -204,6 +211,8 @@ class MetaTrader5:
 
     def enviar(self, ordem: Ordem) -> str:
         r = self.mt5.order_send(self.requisicao(ordem))
+        if r is not None and r.retcode == self.ALGO_DESLIGADO:
+            raise ErroDeOrdem(f"{self.nome}: o botão 'Algo Trading' do terminal está desligado")
         if r is None or r.retcode not in self.RETCODES_OK:
             motivo = self.mt5.last_error() if r is None else f"{r.retcode} {r.comment}"
             raise ErroDeOrdem(f"{self.nome}: {ordem.ticker} recusada: {motivo}")
