@@ -1,0 +1,11 @@
+perna,dia,media_bp,t,subperiodos_negativos,p_permutacao,candidata
+noite comprada,segunda,21.6898,5.8241,0,0.3701,False
+noite comprada,terça,16.6309,4.8923,0,0.3701,False
+noite comprada,quarta,11.2558,2.6184,0,0.3701,False
+noite comprada,quinta,14.3362,3.4382,0,0.3701,False
+noite comprada,sexta,11.5082,2.3599,1,0.3701,False
+dia vendido,segunda,9.3372,1.6528,1,0.9972,False
+dia vendido,terça,6.6910,1.1205,1,0.9972,False
+dia vendido,quarta,9.5902,1.5829,1,0.9972,False
+dia vendido,quinta,9.8749,1.5995,0,0.9972,False
+dia vendido,sexta,8.0108,1.3607,1,0.9972,False

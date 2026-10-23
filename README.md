@@ -187,6 +187,14 @@ ações.** O tick de R$ 0,01 é caro numa opção de R$ 0,65, e a opção perde 
 ações de noite com puts de dia, teria Sharpe de 1,84 sem custo, mas cai para 0,90 com meio tick.
 A versão em ações tem 1,35. Detalhes: [`docs/opcoes.md`](docs/opcoes.md).
 
+## Que dia da semana rende mais?
+
+As 10 pernas (a noite comprada e o dia vendido, em cada dia da semana) dão lucro desde 2006, já
+com o custo da versão operada. A melhor é a noite comprada na segunda: +21,7 bp por noite. As
+diferenças entre os dias são compatíveis com acaso (p = 0,37 nas noites, 0,997 nos dias), e a
+ordem muda de um subperíodo para outro. Por isso, nada muda na operação. Detalhes:
+[`docs/dias_da_semana.md`](docs/dias_da_semana.md).
+
 ## Como operar de verdade
 
 O manual completo está em [`docs/como_operar.md`](docs/como_operar.md): teoria, rotina
@@ -226,6 +234,7 @@ na data-ex. O motivo está em [`docs/tratamento_dos_precos.md`](docs/tratamento_
 | Passo 9. Execução: a completa com aluguel, a recompra antes do call e os mercados de fora | **Concluído**: [`docs/execucao.md`](docs/execucao.md) |
 | Passo 10. Automação: corretoras (Rico + Genial) e o executor | **Em andamento**: código pronto e testado no simulado; falta abrir as contas ([`docs/automacao.md`](docs/automacao.md)) |
 | Passo 11. As estratégias com opções de compra e de venda | **Concluído**: nenhuma ganha das ações ([`docs/opcoes.md`](docs/opcoes.md)) |
+| Passo 12. Que dia da semana rende mais: as 10 pernas | **Concluído**: todas dão lucro; as diferenças são compatíveis com acaso ([`docs/dias_da_semana.md`](docs/dias_da_semana.md)) |
 
 ## Dados
 
@@ -261,6 +270,7 @@ Requer [uv](https://docs.astral.sh/uv/). Python 3.12, fixado em `.python-version
     uv run python -m overnight_br.exterior           # EUA, ADRs e ETFs (~15 min na 1ª vez)
     uv run python -m overnight_br.executor --help    # o executor dos leilões (MetaTrader 5)
     uv run python -m overnight_br.opcoes             # as estratégias com opções (~20 min)
+    uv run python -m overnight_br.dias_da_semana     # as 10 pernas por dia da semana (~1 min)
     uv run python -m overnight_br.operacao --help    # operação: escolha, boleta, papel, conferir
     uv run pytest
 
@@ -289,6 +299,7 @@ Os dois gravam em `results/` as figuras e as tabelas em CSV.
       executor.py      manda as ordens dos leilões nas duas contas, com travas
       alertas.py       registro e avisos no celular (ntfy)
       opcoes.py        as estratégias com calls e puts, das opções do COTAHIST
+      dias_da_semana.py  as 10 pernas por dia da semana, na carteira e em cada ação
       operacao.py      operar: escolha do mês, boleta dos leilões, papel e conferência
     scripts/           agendamento da rotina no Windows
     data/              bruto e processado; fora do git, o pipeline refaz
