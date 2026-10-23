@@ -1,0 +1,15 @@
+grupo,recompra,pregoes,acoes,media_bp,erro_padrao_bp
+todas,16h40,20,54,0.968,3.452
+todas,16h45,20,54,0.696,3.166
+todas,16h50,20,54,2.021,2.256
+todas,último antes do call,20,54,0.980,2.159
+todas,preço médio 16h40-16h50,20,54,1.594,2.756
+todas,meio spread (Roll),20,54,1.825,
+todas,meio tick,20,54,2.754,
+carteira,16h40,20,5,3.789,6.422
+carteira,16h45,20,5,5.690,6.008
+carteira,16h50,20,5,9.946,4.477
+carteira,último antes do call,20,5,9.175,4.049
+carteira,preço médio 16h40-16h50,20,5,8.328,5.269
+carteira,meio spread (Roll),20,5,2.379,
+carteira,meio tick,20,5,3.676,

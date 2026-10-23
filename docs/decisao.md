@@ -5,6 +5,12 @@ até 21/10/2026. Código: [`decisao.py`](../src/overnight_br/decisao.py).
 
 > Isto é resultado de pesquisa com dados históricos, não recomendação de investimento.
 
+> **Atualização (23/10/2026):** a noite e dia ficou viável. Alugando as ações (BTC), a venda da
+> manhã deixa de ser a descoberto, não há zeragem, e tudo acontece nos leilões. Com o custo do
+> aluguel, ela rende 27,0% ao ano depois do IR nos últimos 5 anos, com Sharpe de 1,07 no pior
+> subperíodo, e passa a ser a estratégia que vamos operar. A só noite vira plano C. Ver
+> [`execucao.md`](execucao.md).
+
 ## Resposta curta
 
 - **No papel,** a melhor estratégia para pessoa física, depois do custo e do imposto, é a **noite

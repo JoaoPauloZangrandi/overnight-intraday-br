@@ -122,9 +122,10 @@ Custos, imposto, piso de preço, cenários, piores noites e a carteira de novemb
 **No papel,** a versão completa (comprada de noite e vendida de dia) é a melhor para pessoa
 física, depois do custo e do imposto: 29,3% ao ano em 5 anos, contra 20,6% da só noite.
 
-**Na prática, vamos operar a só noite.** O backtest da completa recompra o vendido no call de
-fechamento, e as corretoras exigem fechar o day trade antes do call. Além disso, a completa só
-cabe em lotes de 100 a partir de cerca de R$ 81 mil.
+**No passo 8, a decisão prática foi a só noite.** O backtest da completa recompra o vendido no
+call de fechamento, e as corretoras exigem fechar o day trade antes do call. **No passo 9, a
+completa ficou viável, alugando as ações** (seção seguinte). Ela cabe em lotes de 100 a partir de
+cerca de R$ 81 mil.
 
 Também testei:
 - **Eventos bruscos** (eleição, COVID, Joesley Day): três variantes da escolha das 5 para eles
@@ -135,6 +136,26 @@ Também testei:
 Detalhes, corretora (Rico) e o plano da automação total: [`docs/decisao.md`](docs/decisao.md).
 
 ![decisao](results/decisao_lateral_e_eventos.png)
+
+## A completa de verdade: com aluguel
+
+**Alugando as ações (BTC),** a venda da manhã passa a ser de ações que estão na custódia. Não há
+vendido a descoberto para a corretora zerar antes do call, e tudo acontece nos leilões, como no
+backtest. O custo do aluguel das 5 de novembro é de 2,8% ao ano (HAPV3 a 9%, MGLU3 a 5%, as
+outras perto de zero), mais a parte da B3 e da corretora.
+
+| Custo de PF | Depois do IR, últimos 5 anos | Sharpe depois do IR, pior subperíodo | Queda máxima desde 2009 |
+|---|---|---|---|
+| **Noite e dia com aluguel (a que vamos operar)** | **27,0%** | **1,07** | −16% |
+| Noite e dia, recompra às 16h50, sem aluguel | 25,2% | 0,96 | −16% |
+| Só noite | 20,6% | 0,15 | −35% |
+
+Também medi, nos negócios intradiários da B3, quanto custa recomprar antes do call (só o meio
+spread) e testei a mesma regra fora do Brasil. **Nos EUA, a só noite nas ações grandes funciona**
+(19,5% ao ano em dólar depois do IR, com 1 bp por lado), mas fica atrás da completa brasileira.
+ADRs, ETFs, mini-índice, CFD e opções não servem. Detalhes: [`docs/execucao.md`](docs/execucao.md).
+
+![execucao](results/execucao.png)
 
 ## Como operar de verdade
 
@@ -172,6 +193,7 @@ na data-ex. O motivo está em [`docs/tratamento_dos_precos.md`](docs/tratamento_
 | Passo 6. Operação: manual, boleta, papel e agendamento | **Concluído**: [`docs/como_operar.md`](docs/como_operar.md) |
 | Passo 7. Só noite: como escolher as 5, bateria completa e corretora | **Concluído**: [`docs/so_noite.md`](docs/so_noite.md) |
 | Passo 8. Decisão: qual estratégia operar, mercado de lado e eventos bruscos | **Concluído**: [`docs/decisao.md`](docs/decisao.md) |
+| Passo 9. Execução: a completa com aluguel, a recompra antes do call e os mercados de fora | **Concluído**: [`docs/execucao.md`](docs/execucao.md) |
 
 ## Dados
 
@@ -182,6 +204,11 @@ eventos do quantbr serviram só para validar (ver o tratamento dos preços, item
 
 O backtest usa também o CDI do Banco Central (SGS, série 12) e a tabela oficial de tarifas da
 B3, transcrita no código.
+
+O passo 9 usa ainda dados públicos que o COTAHIST não tem: o negócio a negócio e as taxas de
+aluguel da B3 (só os últimos ~21 pregões ficam no ar, então o resumo é guardado em `results/`), e,
+para os mercados de fora, o Yahoo Finance, a composição histórica do S&P 500
+([fja05680/sp500](https://github.com/fja05680/sp500)) e o T-bill do FRED.
 
 ## Como reproduzir
 
@@ -197,6 +224,9 @@ Requer [uv](https://docs.astral.sh/uv/). Python 3.12, fixado em `.python-version
     uv run python -m overnight_br.so_noite           # a bateria da só noite (~10 min)
     uv run python -m overnight_br.decisao            # a decisão: versões, lateral, eventos (~4 min)
     uv run python -m overnight_br.imposto_pf         # efeito do imposto de pessoa física
+    uv run python -m overnight_br.b3_publico         # negócio a negócio e aluguel recentes da B3
+    uv run python -m overnight_br.execucao           # como executar a completa (~2 min)
+    uv run python -m overnight_br.exterior           # EUA, ADRs e ETFs (~15 min na 1ª vez)
     uv run python -m overnight_br.operacao --help    # operação: escolha, boleta, papel, conferir
     uv run pytest
 
@@ -218,6 +248,9 @@ Os dois gravam em `results/` as figuras e as tabelas em CSV.
       so_noite.py      a só noite: métricas, custo, piso, imposto, cenários e piores noites
       decisao.py       qual versão operar, mercado de lado e eventos bruscos
       imposto_pf.py    o imposto de pessoa física, mês a mês
+      b3_publico.py    negócio a negócio e taxas de aluguel recentes da B3
+      execucao.py      como executar a completa: aluguel, recompra antes do call, filtro
+      exterior.py      a mesma regra nos EUA, nos ADRs brasileiros e em ETFs
       operacao.py      operar: escolha do mês, boleta dos leilões, papel e conferência
     scripts/           agendamento da rotina no Windows
     data/              bruto e processado; fora do git, o pipeline refaz
