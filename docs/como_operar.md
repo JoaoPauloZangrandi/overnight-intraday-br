@@ -11,10 +11,10 @@
    seguinte) em 5 ações grandes.
 2. Na versão completa, fica também **vendido durante o pregão** (do leilão de abertura ao de
    fechamento) nas mesmas 5. Sem aluguel, ela não é viável para pessoa física: as corretoras
-   exigem fechar o day trade antes do call ([`decisao.md`](decisao.md)). **Com as ações alugadas
-   (BTC), ela é viável, e é a estratégia que vamos operar** ([`execucao.md`](execucao.md)). Este
-   manual descreve a só noite, que continua sendo a base: a completa acrescenta a perna do dia
-   com as ações alugadas.
+   exigem fechar o day trade antes do call ([`decisao.md`](decisao.md)). **Ela é viável recomprando
+   o vendido antes do call, e é a que vamos operar:** a noite na Rico e o dia na Genial, com o
+   executor automático ([`automacao.md`](automacao.md)). Este manual descreve a só noite, que
+   continua sendo a base.
 3. As 5 são escolhidas uma vez por mês: entre as 50 mais líquidas, acima de R$ 5 e fora de
    recuperação judicial, as de **maior média aparada da noite nos últimos 12 meses** (a média sem
    as 5% piores e as 5% melhores noites). A escolha da regra está em [`so_noite.md`](so_noite.md).

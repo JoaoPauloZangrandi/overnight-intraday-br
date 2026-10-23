@@ -13,6 +13,10 @@ dependencies = [
     "pyarrow>=26.0.0",
 ]
 
+[project.optional-dependencies]
+# O executor fala com a corretora pelo MetaTrader 5, que só existe no Windows: uv sync --extra mt5
+mt5 = ["MetaTrader5>=5.0.45; sys_platform == 'win32'"]
+
 [build-system]
 requires = ["uv_build>=0.12.7,<0.13.0"]
 build-backend = "uv_build"

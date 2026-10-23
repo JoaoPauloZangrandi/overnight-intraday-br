@@ -9,6 +9,15 @@ com dados até 22/10/2026. Os negócios intradiários e as taxas de aluguel vêm
 
 > Isto é resultado de pesquisa com dados históricos, não recomendação de investimento.
 
+> **Atualização (23/10/2026), depois de pesquisar as regras das corretoras:** o aluguel não
+> funciona nas corretoras que servem para a estratégia.
+> - Na Rico, o aluguel do tomador é automático, e a conta Posição do MT5 é sem alavancagem.
+> - Na Genial, as ordens com ações alugadas seriam swing e pagariam corretagem.
+>
+> **A versão operada passa a ser o plano B (recompra antes do call):** a noite na Rico e o dia na
+> Genial, com 25,2% ao ano depois do IR em 5 anos e Sharpe de 0,96 no pior subperíodo. Ver
+> [`automacao.md`](automacao.md).
+
 ## Resposta curta
 
 - **Dá para fazer a versão completa com a carteira inteira: alugando as ações.**
@@ -321,6 +330,9 @@ Fonte: [`exterior_tentativas.csv`](../results/exterior_tentativas.csv). O Sharpe
 
 **Vamos operar a noite e dia com aluguel:** a carteira inteira, as 5 ações nas duas pernas, tudo
 nos leilões.
+
+> **Mudou depois da pesquisa das corretoras ([`automacao.md`](automacao.md)):** vamos operar o
+> plano B, com a noite na Rico e o dia na Genial, recomprando o vendido às 16h30.
 
 | Plano | Quando |
 |---|---|

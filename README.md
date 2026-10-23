@@ -123,9 +123,8 @@ Custos, imposto, piso de preço, cenários, piores noites e a carteira de novemb
 física, depois do custo e do imposto: 29,3% ao ano em 5 anos, contra 20,6% da só noite.
 
 **No passo 8, a decisão prática foi a só noite.** O backtest da completa recompra o vendido no
-call de fechamento, e as corretoras exigem fechar o day trade antes do call. **No passo 9, a
-completa ficou viável, alugando as ações** (seção seguinte). Ela cabe em lotes de 100 a partir de
-cerca de R$ 81 mil.
+call de fechamento, e as corretoras exigem fechar o day trade antes do call. **Nos passos 9 e 10, a
+completa ficou viável** (seção seguinte). Ela cabe em lotes de 100 a partir de cerca de R$ 81 mil.
 
 Também testei:
 - **Eventos bruscos** (eleição, COVID, Joesley Day): três variantes da escolha das 5 para eles
@@ -137,18 +136,27 @@ Detalhes, corretora (Rico) e o plano da automação total: [`docs/decisao.md`](d
 
 ![decisao](results/decisao_lateral_e_eventos.png)
 
-## A completa de verdade: com aluguel
+## A completa de verdade
 
-**Alugando as ações (BTC),** a venda da manhã passa a ser de ações que estão na custódia. Não há
-vendido a descoberto para a corretora zerar antes do call, e tudo acontece nos leilões, como no
-backtest. O custo do aluguel das 5 de novembro é de 2,8% ao ano (HAPV3 a 9%, MGLU3 a 5%, as
-outras perto de zero), mais a parte da B3 e da corretora.
+As corretoras exigem zerar o day trade antes do call. Testei dois jeitos de contornar isso:
+- **alugar as ações (BTC),** para a venda da manhã ser de ações que estão na custódia e tudo
+  acontecer nos leilões. O aluguel das 5 de novembro custa 2,8% ao ano, mais a parte da B3 e da
+  corretora;
+- **recomprar o vendido antes do call,** no pregão contínuo. Nos negócios da B3, recomprar às
+  16h40 em vez de no call não perdeu nada em média. O custo é o meio spread.
 
 | Custo de PF | Depois do IR, últimos 5 anos | Sharpe depois do IR, pior subperíodo | Queda máxima desde 2009 |
 |---|---|---|---|
-| **Noite e dia com aluguel (a que vamos operar)** | **27,0%** | **1,07** | −16% |
-| Noite e dia, recompra às 16h50, sem aluguel | 25,2% | 0,96 | −16% |
+| Noite e dia com aluguel | 27,0% | 1,07 | −16% |
+| **Noite e dia, recompra antes do call (a que vamos operar)** | **25,2%** | **0,96** | −16% |
 | Só noite | 20,6% | 0,15 | −35% |
+
+**A pesquisa das corretoras tirou o aluguel:**
+- na Rico, ele é automático, e a conta Posição do MT5 é sem alavancagem;
+- na Genial, as ordens com ações alugadas pagariam corretagem de swing.
+
+A versão operada é a recompra antes do call, com a perna da noite na Rico e a do dia na Genial
+(seção seguinte).
 
 Também medi, nos negócios intradiários da B3, quanto custa recomprar antes do call (só o meio
 spread) e testei a mesma regra fora do Brasil. **Nos EUA, a só noite nas ações grandes funciona**
@@ -156,6 +164,20 @@ spread) e testei a mesma regra fora do Brasil. **Nos EUA, a só noite nas açõe
 ADRs, ETFs, mini-índice, CFD e opções não servem. Detalhes: [`docs/execucao.md`](docs/execucao.md).
 
 ![execucao](results/execucao.png)
+
+## Automação: Rico de noite, Genial de dia
+
+Nenhuma corretora faz as duas pernas num MetaTrader 5 só. Então:
+- **Rico, MT5 "conta Posição":** a perna da noite, com corretagem zero em swing e day trade;
+- **Genial, MT5 de day trade:** a perna do dia, com corretagem zero em day trade e RLP. Recompra
+  às 16h30, antes da zeragem automática das 16h40.
+
+O executor ([`executor.py`](src/overnight_br/executor.py)) manda as ordens dos leilões sozinho:
+- conversa com cada terminal pelo pacote oficial `MetaTrader5`;
+- avisa no celular pelo ntfy;
+- tem travas: modo simulado por padrão, teto por ordem, uma vez por etapa e arquivo `PARAR`.
+
+Decisão, fontes, passo a passo e fases: [`docs/automacao.md`](docs/automacao.md).
 
 ## Como operar de verdade
 
@@ -194,6 +216,7 @@ na data-ex. O motivo está em [`docs/tratamento_dos_precos.md`](docs/tratamento_
 | Passo 7. Só noite: como escolher as 5, bateria completa e corretora | **Concluído**: [`docs/so_noite.md`](docs/so_noite.md) |
 | Passo 8. Decisão: qual estratégia operar, mercado de lado e eventos bruscos | **Concluído**: [`docs/decisao.md`](docs/decisao.md) |
 | Passo 9. Execução: a completa com aluguel, a recompra antes do call e os mercados de fora | **Concluído**: [`docs/execucao.md`](docs/execucao.md) |
+| Passo 10. Automação: corretoras (Rico + Genial) e o executor | **Em andamento**: código pronto e testado no simulado; falta abrir as contas ([`docs/automacao.md`](docs/automacao.md)) |
 
 ## Dados
 
@@ -227,6 +250,7 @@ Requer [uv](https://docs.astral.sh/uv/). Python 3.12, fixado em `.python-version
     uv run python -m overnight_br.b3_publico         # negócio a negócio e aluguel recentes da B3
     uv run python -m overnight_br.execucao           # como executar a completa (~2 min)
     uv run python -m overnight_br.exterior           # EUA, ADRs e ETFs (~15 min na 1ª vez)
+    uv run python -m overnight_br.executor --help    # o executor dos leilões (MetaTrader 5)
     uv run python -m overnight_br.operacao --help    # operação: escolha, boleta, papel, conferir
     uv run pytest
 
@@ -251,6 +275,9 @@ Os dois gravam em `results/` as figuras e as tabelas em CSV.
       b3_publico.py    negócio a negócio e taxas de aluguel recentes da B3
       execucao.py      como executar a completa: aluguel, recompra antes do call, filtro
       exterior.py      a mesma regra nos EUA, nos ADRs brasileiros e em ETFs
+      corretora.py     a conversa com a corretora: simulada ou MetaTrader 5
+      executor.py      manda as ordens dos leilões nas duas contas, com travas
+      alertas.py       registro e avisos no celular (ntfy)
       operacao.py      operar: escolha do mês, boleta dos leilões, papel e conferência
     scripts/           agendamento da rotina no Windows
     data/              bruto e processado; fora do git, o pipeline refaz
