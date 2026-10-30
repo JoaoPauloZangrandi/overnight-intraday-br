@@ -59,8 +59,9 @@ if ($Executor) {
 }
 foreach ($t in $Tarefas) {
     $modulo = if ($t.Modulo) { $t.Modulo } else { "operacao" }
-    $arg = "-NoProfile -ExecutionPolicy Bypass -File `"$Rodar`" -Uv `"$Uv`" -Nome $($t.Nome) " +
-           "-Modulo $modulo -Argumentos `"$($t.Args)`""
+    # janela escondida: fechar a janela do console mata a etapa no meio (aconteceu em 30/10/2026)
+    $arg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Rodar`" " +
+           "-Uv `"$Uv`" -Nome $($t.Nome) -Modulo $modulo -Argumentos `"$($t.Args)`""
     if ($t.Abrir) { $arg += " -Abrir" }
     $acao = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arg -WorkingDirectory $Repo
     $gatilho = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $Dias -At $t.Hora
