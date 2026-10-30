@@ -6,6 +6,9 @@ As contas (decisão em docs/automacao.md):
 - dia: Genial, MetaTrader 5 day trade. Vende a descoberto no leilão de abertura e recompra antes
   da zeragem automática da Genial (15 minutos antes do fim do pregão). Corretagem zero em day
   trade com RLP ativo.
+Ou as duas numa conta netting só, como na demonstração da XP: basta pôr o mesmo terminal em
+[noite] e em [dia]. As pernas nunca ficam abertas ao mesmo tempo (a noite vende no leilão em que
+o dia vende a descoberto), e cada uma reconhece as próprias ordens pelo magic.
 
 Um pregão, no horário de verão americano (fora dele, as etapas da tarde andam 1 hora):
   09h46  abertura  noite: vende o que dormiu comprado. dia: vende a descoberto as 5 do mês
@@ -92,6 +95,7 @@ terminal = 'C:\\Program Files\\Rico MetaTrader 5\\terminal64.exe'
 [dia]
 corretora = "Genial"
 terminal = 'C:\\Program Files\\Genial MetaTrader 5\\terminal64.exe'
+# o mesmo terminal da noite = as duas pernas numa conta netting só
 """
 
 
@@ -116,6 +120,12 @@ class Config:
         if cfg.modo not in MODOS:
             raise ValueError(f"modo deve ser um de {MODOS}, não {cfg.modo!r}")
         return cfg
+
+    @property
+    def conta_unica(self) -> bool:
+        """O mesmo terminal nas duas pernas: um terminal só fica logado numa conta por vez."""
+        terminal = self.dia.get("terminal")
+        return bool(terminal) and terminal == self.noite.get("terminal")
 
 
 # --- calendário -----------------------------------------------------------------------------
@@ -305,7 +315,7 @@ def conectar(cfg: Config, qual: str, precos: dict[str, float]) -> Corretora:
         return _simulada(qual, precos)
     c = getattr(cfg, qual)
     return MetaTrader5(qual, c["terminal"], c.get("login"), c.get("senha"), c.get("servidor"),
-                       tipo_esperado=cfg.modo)
+                       tipo_esperado=cfg.modo, compartilhada=cfg.conta_unica)
 
 
 def _fechar(conta: Corretora, precos: dict[str, float], hoje: date) -> None:
@@ -537,7 +547,8 @@ def checar() -> list[tuple[str, bool, str]]:
         item("config.toml válido", False, str(e))
         return itens
     item("config.toml válido", True, f"modo {cfg.modo}, noite R$ {cfg.capital_noite:,.0f}, "
-         f"dia R$ {cfg.capital_dia:,.0f}")
+         f"dia R$ {cfg.capital_dia:,.0f}"
+         + (", as duas pernas numa conta só" if cfg.conta_unica else ""))
     item("tópico do ntfy (avisos no celular)", bool(cfg.ntfy_topico),
          "chegou um aviso de teste no celular?" if cfg.ntfy_topico else "preencha ntfy_topico")
     if cfg.ntfy_topico:

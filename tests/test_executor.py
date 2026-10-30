@@ -9,7 +9,15 @@ import pandas as pd
 import pytest
 
 from overnight_br import alertas, executor
-from overnight_br.corretora import COMPRA, VENDA, MetaTrader5, Ordem, Simulada
+from overnight_br.corretora import (
+    COMPRA,
+    MAGIC,
+    VENDA,
+    MetaTrader5,
+    Ordem,
+    Simulada,
+    uma_conta,
+)
 
 CARTEIRA = ["AAAA3", "BBBB3", "CCCC3", "DDDD3", "EEEE3"]
 PRECOS = {"AAAA3": 10.0, "BBBB3": 20.0, "CCCC3": 25.0, "DDDD3": 40.0, "EEEE3": 50.0}
@@ -61,6 +69,28 @@ def test_um_pregao_inteiro_no_simulado():
 
     _rodar("cobrir", cfg, contas, QUINTA)
     assert contas["dia"].posicoes() == {}
+
+
+def test_conta_unica_as_duas_pernas_nao_se_misturam():
+    noite, dia = uma_conta(PRECOS)
+    cfg, contas = _cfg(), {"noite": noite, "dia": dia}
+    comprado = {"AAAA3": 1000, "BBBB3": 500, "CCCC3": 400, "DDDD3": 200, "EEEE3": 200}
+    vendido = {t: -q for t, q in comprado.items()}
+
+    _rodar("call", cfg, contas)  # quarta: a noite compra
+    assert (noite.posicoes(), dia.posicoes()) == (comprado, {})
+
+    _rodar("abertura", cfg, contas, QUINTA)  # vende a noite e, no mesmo leilão, o dia
+    assert (noite.posicoes(), dia.posicoes()) == ({}, vendido)
+    assert executor.livro_noite() == {}  # a venda do dia não entra no livro da noite
+    assert {t: q for t, q in noite._posicoes.items() if q} == vendido  # a conta mostra a soma
+
+    _rodar("conferir", cfg, contas, QUINTA)  # a noite não vê sobra nem cancela o dia
+    assert dia.posicoes() == vendido
+    _rodar("cobrir", cfg, contas, QUINTA)
+    _rodar("call", cfg, contas, QUINTA)
+    assert (noite.posicoes(), dia.posicoes()) == (comprado, {})
+    assert executor.livro_noite() == comprado
 
 
 def test_noite_so_vende_o_que_o_executor_comprou():
@@ -204,13 +234,51 @@ class _FakeMT5Negocios(_FakeMT5):
         # como o MT5 da XP manda: a hora do servidor, codificada como se fosse UTC
         hora = datetime(2026, 11, 3, 17, 56, 30, tzinfo=timezone.utc).timestamp()
         return [SimpleNamespace(type=0, symbol="AAAA3", volume=300.0, price=10.0,
-                                time=int(hora), order=7)]
+                                time=int(hora), order=7, magic=MAGIC["noite"])]
 
 
 def test_hora_do_negocio_e_a_do_servidor_do_mt5():
     conta = MetaTrader5("noite", "t.exe", mt5=_FakeMT5Negocios())
     (negocio,) = conta.execucoes(datetime(2026, 11, 3))
     assert negocio.quando == datetime(2026, 11, 3, 17, 56, 30)
+
+
+class _FakeMT5ContaUnica(_FakeMT5Negocios):
+    """Uma conta netting com as duas pernas, às 10h de quinta. Na quarta, a noite comprou 300
+    AAAA3 e 100 BBBB3. No leilão de quinta, vendeu as 300 AAAA3, e o dia vendeu 200 AAAA3 a
+    descoberto; a BBBB3 da noite não vendeu. O dia ainda tem uma ordem aberta."""
+
+    def positions_get(self):
+        return [SimpleNamespace(symbol="AAAA3", type=1, volume=200.0),
+                SimpleNamespace(symbol="BBBB3", type=0, volume=100.0)]
+
+    def orders_get(self):
+        return [SimpleNamespace(ticket=9, symbol="CCCC3", type=3, volume_current=100.0,
+                                price_open=25.0, magic=MAGIC["dia"])]
+
+    def history_deals_get(self, inicio, fim):
+        quinta = int(datetime(2026, 10, 22, 9, 50, tzinfo=timezone.utc).timestamp())
+        quarta = quinta - 86_400
+
+        def negocio(lado, ticker, q, hora, perna):
+            return SimpleNamespace(type=lado, symbol=ticker, volume=q, price=10.0, time=hora,
+                                   order=hora % 1000, magic=MAGIC[perna])
+        return [negocio(0, "AAAA3", 300.0, quarta, "noite"),
+                negocio(0, "BBBB3", 100.0, quarta, "noite"),
+                negocio(1, "AAAA3", 300.0, quinta, "noite"),
+                negocio(1, "AAAA3", 200.0, quinta, "dia")]
+
+
+def test_conta_unica_no_mt5_cada_perna_ve_a_sua_parte():
+    noite = MetaTrader5("noite", "t.exe", mt5=_FakeMT5ContaUnica(), compartilhada=True)
+    dia = MetaTrader5("dia", "t.exe", mt5=_FakeMT5ContaUnica(), compartilhada=True)
+    assert noite.posicoes() == {"BBBB3": 100}
+    assert dia.posicoes() == {"AAAA3": -200}
+    assert noite.ordens_abertas() == []
+    assert [o["ticker"] for o in dia.ordens_abertas()] == ["CCCC3"]
+    assert [(e.ticker, e.lado, e.quantidade) for e in noite.execucoes(datetime(2026, 10, 22))] \
+        == [("AAAA3", VENDA, 300)]
+    assert dia.requisicao(Ordem("AAAA3", COMPRA, 200, 10.0))["magic"] == MAGIC["dia"]
 
 
 def test_cada_modo_tem_sua_pasta(tmp_path, monkeypatch):

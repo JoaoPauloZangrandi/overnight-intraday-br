@@ -7,6 +7,9 @@
   - a perna da noite na Rico, MT5 "conta Posição" (swing, sem alavancagem, corretagem zero);
   - a perna do dia na Genial, MT5 day trade (corretagem zero em day trade com RLP ativo).
 
+As duas pernas também podem dividir uma conta netting só (a demonstração da XP): cada perna marca
+as próprias ordens (o magic, no MT5) e enxerga só a sua parte da posição (visao_da_perna).
+
 O MT5 da Rico e o da Genial são "unicast": só mostram o que foi feito pelo próprio MT5. Uma
 zeragem da mesa de risco não aparece nele. Por isso o executor confere a posição antes de cada
 ordem e avisa quando ela não bate com o que ele mesmo registrou.
@@ -45,10 +48,30 @@ class Execucao:
     preco: float
     quando: datetime
     ordem_id: str
+    perna: str = ""  # "noite" ou "dia": quem mandou a ordem
 
 
 class ErroDeOrdem(RuntimeError):
     """A corretora recusou a ordem."""
+
+
+MAGIC = {"noite": 20261023, "dia": 20261024}  # a etiqueta que cada perna põe nas ordens do MT5
+INICIO_DO_HISTORICO = datetime(2026, 10, 1)  # o executor não operou antes disso
+
+
+def visao_da_perna(perna: str, total: dict[str, int],
+                   negocios_do_dia: list[Execucao]) -> dict[str, int]:
+    """Numa conta netting com as duas pernas, a corretora mostra a soma delas. O dia é a soma
+    dos próprios negócios: zera todo pregão, e um vendido que sobrou continua aparecendo. A
+    noite é o resto."""
+    dia: dict[str, int] = {}
+    for e in negocios_do_dia:
+        dia[e.ticker] = dia.get(e.ticker, 0) + (e.quantidade if e.lado == COMPRA else -e.quantidade)
+    if perna == "dia":
+        visao = dia
+    else:
+        visao = {t: total.get(t, 0) - dia.get(t, 0) for t in set(total) | set(dia)}
+    return {t: q for t, q in visao.items() if q}
 
 
 class Corretora(Protocol):
@@ -81,9 +104,14 @@ class Simulada:
     _execucoes: list[Execucao] = field(default_factory=list)
     _ids: itertools.count = field(default_factory=lambda: itertools.count(1))
     recusar: set[str] = field(default_factory=set)  # tickers cujas ordens a "corretora" recusa
+    _pernas: dict[str, str] = field(default_factory=dict)  # id da ordem -> perna que mandou
+    compartilhada: bool = False  # as duas pernas na mesma conta (ver uma_conta)
 
     def posicoes(self) -> dict[str, int]:
-        return {t: q for t, q in self._posicoes.items() if q}
+        total = {t: q for t, q in self._posicoes.items() if q}
+        if not self.compartilhada:
+            return total
+        return visao_da_perna(self.nome, total, [e for e in self._execucoes if e.perna == "dia"])
 
     def cotacao(self, ticker: str) -> dict[str, float]:
         p = self._precos.get(ticker, float("nan"))
@@ -94,17 +122,22 @@ class Simulada:
             raise ErroDeOrdem(f"{ordem.ticker}: recusada (simulação)")
         oid = str(next(self._ids))
         self._abertas[oid] = ordem
+        self._pernas[oid] = self.nome
         return oid
+
+    def _minha(self, oid: str) -> bool:
+        return not self.compartilhada or self._pernas.get(oid) == self.nome
 
     def ordens_abertas(self) -> list[dict]:
         return [{"id": i, "ticker": o.ticker, "lado": o.lado, "quantidade": o.quantidade,
-                 "preco_limite": o.preco_limite} for i, o in self._abertas.items()]
+                 "preco_limite": o.preco_limite} for i, o in self._abertas.items()
+                if self._minha(i)]
 
     def cancelar(self, ordem_id: str) -> None:
         self._abertas.pop(ordem_id, None)
 
     def execucoes(self, desde: datetime) -> list[Execucao]:
-        return [e for e in self._execucoes if e.quando >= desde]
+        return [e for e in self._execucoes if e.quando >= desde and self._minha(e.ordem_id)]
 
     def fechar(self) -> None:
         pass
@@ -124,8 +157,19 @@ class Simulada:
                 continue
             sinal = 1 if o.lado == COMPRA else -1
             self._posicoes[o.ticker] = self._posicoes.get(o.ticker, 0) + sinal * o.quantidade
-            self._execucoes.append(Execucao(o.ticker, o.lado, o.quantidade, p, quando, oid))
+            self._execucoes.append(Execucao(o.ticker, o.lado, o.quantidade, p, quando, oid,
+                                            self._pernas.get(oid, self.nome)))
             del self._abertas[oid]
+
+
+def uma_conta(precos: dict[str, float]) -> tuple[Simulada, Simulada]:
+    """As duas pernas numa conta simulada só, como na demonstração da XP: posição, ordens e
+    negócios em comum, e cada perna enxergando a sua parte."""
+    noite = Simulada(nome="noite", _precos=dict(precos), compartilhada=True)
+    dia = Simulada(nome="dia", _posicoes=noite._posicoes, _precos=noite._precos,
+                   _abertas=noite._abertas, _execucoes=noite._execucoes, _ids=noite._ids,
+                   _pernas=noite._pernas, compartilhada=True)
+    return noite, dia
 
 
 # --- MetaTrader 5 ---------------------------------------------------------------------------
@@ -140,7 +184,8 @@ def arredondar_ao_tick(preco: float, tick: float, lado: str) -> float:
 
 class MetaTrader5:
     """Uma conta, num terminal MT5 já instalado. O login pode vir do próprio terminal (senha
-    salva nele) ou do arquivo local de configuração, que fica fora do git."""
+    salva nele) ou do arquivo local de configuração, que fica fora do git. Com `compartilhada`,
+    a conta tem as duas pernas, e esta enxerga só as próprias ordens, negócios e posição."""
 
     RETCODES_OK = (10008, 10009, 10010)  # PLACED, DONE, DONE_PARTIAL
     ALGO_DESLIGADO = 10027  # TRADE_RETCODE_CLIENT_DISABLES_AT
@@ -148,10 +193,12 @@ class MetaTrader5:
 
     def __init__(self, nome: str, terminal: str, login: int | None = None,
                  senha: str | None = None, servidor: str | None = None,
-                 magic: int = 20261023, mt5=None, tipo_esperado: str | None = None):
+                 magic: int | None = None, mt5=None, tipo_esperado: str | None = None,
+                 compartilhada: bool = False):
         if mt5 is None:
             import MetaTrader5 as mt5  # só existe no Windows: uv sync --extra mt5
-        self.mt5, self.nome, self.magic = mt5, nome, magic
+        self.mt5, self.nome, self.compartilhada = mt5, nome, compartilhada
+        self.magic = MAGIC.get(nome, MAGIC["noite"]) if magic is None else magic
         args = {"path": terminal, "timeout": 60_000}
         if login:
             args |= {"login": int(login), "password": senha, "server": servidor}
@@ -182,7 +229,10 @@ class MetaTrader5:
         for p in self.mt5.positions_get() or ():
             sinal = 1 if p.type == self.mt5.POSITION_TYPE_BUY else -1
             out[p.symbol] = out.get(p.symbol, 0) + sinal * round(p.volume)
-        return {t: q for t, q in out.items() if q}
+        total = {t: q for t, q in out.items() if q}
+        if not self.compartilhada:
+            return total
+        return visao_da_perna(self.nome, total, self._negocios(INICIO_DO_HISTORICO, MAGIC["dia"]))
 
     def cotacao(self, ticker: str) -> dict[str, float]:
         self._simbolo(ticker)
@@ -223,7 +273,8 @@ class MetaTrader5:
         return [{"id": str(o.ticket), "ticker": o.symbol,
                  "lado": COMPRA if o.type in (m.ORDER_TYPE_BUY, m.ORDER_TYPE_BUY_LIMIT)
                  else VENDA, "quantidade": round(o.volume_current),
-                 "preco_limite": o.price_open} for o in m.orders_get() or ()]
+                 "preco_limite": o.price_open} for o in m.orders_get() or ()
+                if not self.compartilhada or o.magic == self.magic]
 
     def cancelar(self, ordem_id: str) -> None:
         r = self.mt5.order_send({"action": self.mt5.TRADE_ACTION_REMOVE,
@@ -232,20 +283,28 @@ class MetaTrader5:
             raise ErroDeOrdem(f"{self.nome}: não cancelou {ordem_id}")
 
     def execucoes(self, desde: datetime) -> list[Execucao]:
+        return self._negocios(desde, self.magic)
+
+    def _negocios(self, desde: datetime, magic: int) -> list[Execucao]:
+        """Os negócios desde uma data. Numa conta compartilhada, só os da perna do `magic`."""
         m = self.mt5
         negocios = m.history_deals_get(desde - timedelta(days=1),
                                        datetime.now() + timedelta(days=1)) or ()
+        pernas = {v: k for k, v in MAGIC.items()}
         out = []
         for d in negocios:
             if d.type not in (m.DEAL_TYPE_BUY, m.DEAL_TYPE_SELL):
                 continue  # depósito, taxa, ajuste
+            if self.compartilhada and d.magic != magic:
+                continue  # negócio da outra perna
             # o MT5 manda a hora do servidor (Brasília, na XP) como se fosse UTC; lida como
             # hora local, sairia 3 horas antes
             quando = datetime.fromtimestamp(d.time, timezone.utc).replace(tzinfo=None)
             if quando < desde:
                 continue
             out.append(Execucao(d.symbol, COMPRA if d.type == m.DEAL_TYPE_BUY else VENDA,
-                                round(d.volume), float(d.price), quando, str(d.order)))
+                                round(d.volume), float(d.price), quando, str(d.order),
+                                pernas.get(d.magic, self.nome)))
         return out
 
     def fechar(self) -> None:
