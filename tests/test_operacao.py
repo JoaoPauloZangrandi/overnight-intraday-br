@@ -1,12 +1,15 @@
 """Trava as regras da operação: calendário, boleta, escolha com dados até a véspera e conferência."""
 from __future__ import annotations
 
+import json
+import sys
 from datetime import date
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from overnight_br import alertas
 from overnight_br import operacao as op
 
 
@@ -120,6 +123,23 @@ def test_arquivo_da_escolha_feito_com_outros_dados_e_refeito(tmp_path, monkeypat
     assert set(pd.read_csv(tmp_path / "escolha_2026-11.csv")["dados_ate"]) == {"2026-10-29"}
     # gravado com os dados certos, o arquivo vale sozinho, sem o painel
     assert op.carteira_do_mes(p.iloc[:0], novembro) == ["T63", "T53", "T43", "T33", "T23"]
+
+
+def test_erro_numa_tarefa_de_dados_vira_aviso_urgente(tmp_path, monkeypatch):
+    monkeypatch.setattr(op, "PASTA", tmp_path)
+    (tmp_path / "config.toml").write_text('ntfy_topico = ""\n', encoding="utf-8")
+    monkeypatch.setattr(alertas, "REGISTRO", tmp_path / "registro.jsonl")
+
+    def quebra():
+        raise ConnectionError("a B3 não respondeu")
+
+    monkeypatch.setattr(op, "atualizar", quebra)
+    monkeypatch.setattr(sys, "argv", ["operacao", "atualizar"])
+    with pytest.raises(ConnectionError):
+        op.main()
+    aviso = json.loads((tmp_path / "registro.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert (aviso["nivel"], aviso["titulo"]) == ("urgente", "ERRO na operação (atualizar)")
+    assert "a B3 não respondeu" in aviso["mensagem"]
 
 
 def test_conferir_mede_o_custo_em_relacao_ao_leilao():

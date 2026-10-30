@@ -19,12 +19,14 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
+import tomllib
 from datetime import date
 
 import numpy as np
 import pandas as pd
 
-from overnight_br import backtest, busca, carteira, cotahist, painel, selecao, universo
+from overnight_br import alertas, backtest, busca, carteira, cotahist, painel, selecao, universo
 
 PASTA = cotahist.RAIZ / "data" / "operacao"
 ARQUIVO_PAINEL = cotahist.PROCESSADO.parent / "painel.parquet"
@@ -295,6 +297,24 @@ def papel(p: pd.DataFrame, inicio: pd.Timestamp, custo: float) -> pd.DataFrame:
 # --- linha de comando -----------------------------------------------------------------------
 
 def main() -> None:
+    """Nas tarefas agendadas ninguém vê o erro: ele vira aviso urgente no celular, pelo tópico
+    do ntfy do config.toml do executor."""
+    try:
+        _main()
+    except Exception as e:
+        topico = ""
+        try:
+            with open(PASTA / "config.toml", "rb") as f:
+                topico = tomllib.load(f).get("ntfy_topico", "")
+        except (OSError, tomllib.TOMLDecodeError):
+            pass
+        comando = " ".join(sys.argv[1:2]) or "?"
+        alertas.avisar(f"ERRO na operação ({comando})", f"{type(e).__name__}: {e}", "urgente",
+                       topico)
+        raise
+
+
+def _main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     sub = ap.add_subparsers(dest="comando", required=True)
     sub.add_parser("atualizar")

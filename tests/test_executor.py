@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import date, datetime, time, timezone
 from types import SimpleNamespace
 
@@ -91,6 +92,62 @@ def test_conta_unica_as_duas_pernas_nao_se_misturam():
     _rodar("call", cfg, contas, QUINTA)
     assert (noite.posicoes(), dia.posicoes()) == (comprado, {})
     assert executor.livro_noite() == comprado
+
+
+def _painel_com(precos):
+    return pd.DataFrame({"data": pd.Timestamp("2026-10-20"), "ticker": list(precos),
+                         "fechamento_acao": list(precos.values())})
+
+
+def _avisos():
+    linhas = [json.loads(x) for x in alertas.REGISTRO.read_text(encoding="utf-8").splitlines()]
+    return [x for x in linhas if x["evento"] == "aviso"]
+
+
+def test_pnl_da_noite_e_do_dia_nos_avisos(pasta):
+    noite, dia = uma_conta(PRECOS)
+    cfg, contas = _cfg(), {"noite": noite, "dia": dia}
+    alta = {t: round(v * 1.02, 4) for t, v in PRECOS.items()}  # abre 2% acima da compra da noite
+    tarde = {t: round(v * 1.01, 4) for t, v in PRECOS.items()}  # e recua para 1% acima à tarde
+
+    def etapa(nome, quando, precos):
+        executor.rodar(nome, cfg, _painel_com(precos), datetime.combine(quando, time(12)),
+                       forcar_horario=True, contas=contas)
+
+    etapa("call", QUARTA, PRECOS)
+    etapa("abertura", QUINTA, alta)
+    etapa("conferir", QUINTA, alta)
+    noite._precos.update(tarde)
+    etapa("cobrir", QUINTA, alta)
+    etapa("call", QUINTA, alta)
+    etapa("fim", QUINTA, alta)
+
+    custo = 1000 * 10 + 500 * 20 + 400 * 25 + 200 * 40 + 200 * 50  # R$ 48 mil comprados na quarta
+    vendido = [e for e in noite._execucoes if e.perna == "dia" and e.lado == VENDA]
+    dia_rs = sum(e.quantidade * (alta[e.ticker] - tarde[e.ticker]) for e in vendido)
+    pnl = pd.read_csv(pasta / "pnl.csv")
+    assert pnl["noite_rs"].tolist() == [pytest.approx(0.02 * custo)]
+    assert pnl["dia_rs"].tolist() == [pytest.approx(dia_rs, abs=0.01)]
+    titulos = [a["titulo"] for a in _avisos()]
+    assert "Abertura: noite +R$ 960,00 (+2,00%)" in titulos
+    assert f"Fim do pregão: hoje {executor._rs(0.02 * custo + dia_rs)}" in titulos
+
+
+def test_erro_numa_etapa_vira_aviso_urgente(tmp_path, monkeypatch):
+    monkeypatch.setattr(executor.Config, "ler", classmethod(lambda cls: cls(modo="simulado")))
+    monkeypatch.setattr(executor.operacao, "PASTA", tmp_path)
+    monkeypatch.setattr(executor.operacao, "_carregar", _painel)
+
+    def quebra(*args, **kwargs):
+        raise ConnectionError("o MT5 não conectou")
+
+    monkeypatch.setattr(executor, "rodar", quebra)
+    monkeypatch.setattr(sys, "argv", ["executor", "abertura"])
+    with pytest.raises(ConnectionError):
+        executor.main()
+    ultimo = _avisos()[-1]
+    assert (ultimo["nivel"], ultimo["titulo"]) == ("urgente", "ERRO no executor (abertura)")
+    assert "o MT5 não conectou" in ultimo["mensagem"]
 
 
 def test_noite_so_vende_o_que_o_executor_comprou():

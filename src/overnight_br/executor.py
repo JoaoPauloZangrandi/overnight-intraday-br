@@ -61,6 +61,7 @@ from overnight_br.corretora import (
     VENDA,
     Corretora,
     ErroDeOrdem,
+    Execucao,
     MetaTrader5,
     Ordem,
     Simulada,
@@ -281,23 +282,99 @@ def enviar(conta: Corretora, ordens: list[Ordem], estado: dict, etapa: str,
 
 
 def atualizar_livro(conta: Corretora, desde: datetime) -> dict[str, int]:
-    """O livro da noite: as compras do executor menos as vendas. Cada execução entra uma vez."""
+    """O livro da noite: as compras do executor menos as vendas. Guarda também o preço médio de
+    compra de cada ação e, por dia, o resultado das vendas (R$ e o custo do que foi vendido),
+    que vai para os avisos. Cada execução entra uma vez."""
     livro = _ler_json(LIVRO_NOITE, {})
     vistos = set(livro.pop("_execucoes", []))
-    for e in conta.execucoes(desde):
+    custo = livro.pop("_custo", {})
+    realizado = livro.pop("_realizado", {})
+    for e in sorted(conta.execucoes(desde), key=lambda e: e.quando):
         chave = f"{e.ordem_id}:{e.quando.isoformat()}:{e.quantidade}"
         if chave in vistos:
             continue
         vistos.add(chave)
-        livro[e.ticker] = livro.get(e.ticker, 0) + (e.quantidade if e.lado == COMPRA
-                                                    else -e.quantidade)
+        antes = livro.get(e.ticker, 0)
+        if e.lado == COMPRA:
+            ja = max(antes, 0)
+            custo[e.ticker] = (custo.get(e.ticker, 0.0) * ja + e.preco * e.quantidade) / (
+                ja + e.quantidade)
+            livro[e.ticker] = antes + e.quantidade
+        else:
+            if e.ticker in custo:
+                dia = realizado.setdefault(e.quando.date().isoformat(), {})
+                rs, base = dia.get(e.ticker, [0.0, 0.0])
+                dia[e.ticker] = [rs + (e.preco - custo[e.ticker]) * e.quantidade,
+                                 base + custo[e.ticker] * e.quantidade]
+            livro[e.ticker] = antes - e.quantidade
     livro = {t: q for t, q in livro.items() if q}
-    _gravar_json(LIVRO_NOITE, livro | {"_execucoes": sorted(vistos)})
+    custo = {t: c for t, c in custo.items() if livro.get(t, 0) > 0}
+    _gravar_json(LIVRO_NOITE, livro | {"_execucoes": sorted(vistos), "_custo": custo,
+                                       "_realizado": realizado})
     return livro
 
 
 def livro_noite() -> dict[str, int]:
     return {t: q for t, q in _ler_json(LIVRO_NOITE, {}).items() if not t.startswith("_")}
+
+
+# --- resultado (PnL) ------------------------------------------------------------------------
+
+def noite_realizada(d: date) -> dict[str, list[float]]:
+    """O que a noite realizou nas vendas de um dia: ação -> [R$, custo do que foi vendido]."""
+    return _ler_json(LIVRO_NOITE, {}).get("_realizado", {}).get(d.isoformat(), {})
+
+
+def medias(negocios: list[Execucao], lado: str) -> dict[str, tuple[int, float]]:
+    """Quantidade e preço médio por ação, só das execuções de um lado."""
+    soma: dict[str, list[float]] = {}
+    for e in negocios:
+        if e.lado == lado:
+            q, v = soma.get(e.ticker, [0, 0.0])
+            soma[e.ticker] = [q + e.quantidade, v + e.preco * e.quantidade]
+    return {t: (int(q), v / q) for t, (q, v) in soma.items()}
+
+
+def resultado_dia(negocios: list[Execucao]) -> dict[str, tuple[float, float, int]]:
+    """O vendido do dia por ação: R$ ganho na parte já recomprada, quanto ela valia na venda e a
+    quantidade que continua vendida."""
+    vendas, compras = medias(negocios, VENDA), medias(negocios, COMPRA)
+    out = {}
+    for t, (qv, pv) in vendas.items():
+        qc, pc = compras.get(t, (0, 0.0))
+        q = min(qv, qc)
+        out[t] = (q * (pv - pc), q * pv, qv - qc)
+    return out
+
+
+def registrar_pnl(d: date, noite_rs: float, dia_rs: float) -> float:
+    """Guarda o resultado do dia em pnl.csv (um pregão por linha) e devolve o acumulado."""
+    arquivo = PASTA / "pnl.csv"
+    linhas = pd.read_csv(arquivo).to_dict("records") if arquivo.exists() else []
+    linhas = [x for x in linhas if x["data"] != d.isoformat()] + [
+        {"data": d.isoformat(), "noite_rs": round(noite_rs, 2), "dia_rs": round(dia_rs, 2),
+         "total_rs": round(noite_rs + dia_rs, 2)}]
+    pd.DataFrame(linhas).to_csv(arquivo, index=False)
+    return float(sum(x["total_rs"] for x in linhas))
+
+
+def _rs(v: float) -> str:
+    return ("-" if v < 0 else "+") + "R$ " + f"{abs(v):,.2f}".translate(str.maketrans(",.", ".,"))
+
+
+def _pct(v: float) -> str:
+    return f"{v * 100:+.2f}%".replace(".", ",")
+
+
+def _lista(itens: dict[str, tuple[int, float]], pnl: dict[str, list[float]] | None = None) -> str:
+    """MGLU3 1.900 a 5,31 (+0,62%), ... — com o resultado da ação quando houver."""
+    partes = []
+    for t, (q, pm) in sorted(itens.items()):
+        s = f"{t} {q:,}".replace(",", ".") + f" a {pm:.2f}".replace(".", ",")
+        if pnl and t in pnl and pnl[t][1]:
+            s += f" ({_pct(pnl[t][0] / pnl[t][1])})"
+        partes.append(s)
+    return ", ".join(partes) or "nada"
 
 
 # --- contas ---------------------------------------------------------------------------------
@@ -318,11 +395,16 @@ def conectar(cfg: Config, qual: str, precos: dict[str, float]) -> Corretora:
                        tipo_esperado=cfg.modo, compartilhada=cfg.conta_unica)
 
 
+def _agora_em(hoje: date) -> datetime:
+    """A hora de agora no dia do pregão: no simulado, o negócio fica com a data da etapa."""
+    return datetime.combine(hoje, datetime.now().time())
+
+
 def _fechar(conta: Corretora, precos: dict[str, float], hoje: date) -> None:
     """Fecha a conta. No modo simulado, antes executa as ordens ao preço dado, como num
     leilão, guarda a posição e, na conta da noite, atualiza o livro."""
     if isinstance(conta, Simulada):
-        conta.leilao(precos)
+        conta.leilao(precos, _agora_em(hoje))
         _gravar_json(PASTA / f"simulada_{conta.nome}.json", conta.posicoes())
         if conta.nome == "noite":
             atualizar_livro(conta, datetime.combine(hoje, time(0)))
@@ -414,10 +496,12 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
             _fechar(dia, ref, hoje)
 
     elif etapa == "conferir":
+        meia_noite = datetime.combine(hoje, time(0))
         noite = abrir("noite")
         for o in noite.ordens_abertas():  # venda do leilão que não executou: troca por nova
             noite.cancelar(o["id"])
-        livro = atualizar_livro(noite, datetime.combine(hoje, time(0)))
+        livro = atualizar_livro(noite, meia_noite)
+        vendas_noite = medias(noite.execucoes(meia_noite), VENDA)
         cot = {t: noite.cotacao(t) for t in livro}
         ordens = planejar_conferencia(noite.posicoes(), livro, cot)
         if ordens:
@@ -437,7 +521,17 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
                 avisos.append("dia: vendas que não executaram no leilão foram canceladas: "
                               + ", ".join(o["ticker"] for o in abertas))
             resumo["dia_vendido"] = dia.posicoes()
+            vendas_dia = medias(dia.execucoes(meia_noite), VENDA)
             _fechar(dia, {}, hoje)
+        pnl = noite_realizada(hoje)
+        rs, base = sum(x[0] for x in pnl.values()), sum(x[1] for x in pnl.values())
+        titulo = f"Abertura: noite {_rs(rs)} ({_pct(rs / base)})" if base else "Abertura"
+        texto = ("Noite vendeu: " + _lista(vendas_noite, pnl)
+                 + (f" = {_rs(rs)} ({_pct(rs / base)})" if base else ""))
+        if usa_dia:
+            texto += "\nDia vendeu a descoberto: " + _lista(vendas_dia)
+        alertas.avisar(titulo, texto, "info", cfg.ntfy_topico)
+        resumo["pnl_noite"] = round(rs, 2)
 
     elif etapa == "cobrir":
         dia = abrir("dia")
@@ -450,7 +544,7 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
             cot = {t: dia.cotacao(t) for t, q in pos.items() if q < 0}
             erros += enviar(dia, planejar_cobertura(pos, cot), estado, etapa, cfg)
             if isinstance(dia, Simulada):
-                dia.leilao({t: c["venda"] for t, c in cot.items()})
+                dia.leilao({t: c["venda"] for t, c in cot.items()}, _agora_em(hoje))
             else:
                 relogio.sleep(20)
         sobra = {t: q for t, q in dia.posicoes().items() if q < 0}
@@ -476,20 +570,40 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
         _fechar(noite, ref_call, hoje)
 
     elif etapa == "fim":
+        meia_noite = datetime.combine(hoje, time(0))
         noite = abrir("noite")
-        livro = atualizar_livro(noite, datetime.combine(hoje, time(0)))
+        livro = atualizar_livro(noite, meia_noite)
+        compras = medias(noite.execucoes(meia_noite), COMPRA)
         _fechar(noite, {}, hoje)
-        msg = f"noite: {livro or 'nada'}"
-        pos_dia = {}
+        pnl = noite_realizada(hoje)
+        noite_rs, noite_base = sum(x[0] for x in pnl.values()), sum(x[1] for x in pnl.values())
+        linhas = ["Noite (vendida na abertura): "
+                  + (f"{_rs(noite_rs)} ({_pct(noite_rs / noite_base)})" if noite_base
+                     else "nada vendido hoje")]
+        pos_dia, dia_rs = {}, 0.0
         if usa_dia:
             dia = abrir("dia")
             pos_dia = dia.posicoes()
+            res = resultado_dia(dia.execucoes(meia_noite))
             _fechar(dia, {}, hoje)
-            msg += f" | dia: {pos_dia or 'zerado'}"
+            dia_rs, dia_base = sum(x[0] for x in res.values()), sum(x[1] for x in res.values())
+            linhas.append("Dia (vendido na abertura, recomprado à tarde): "
+                          + (f"{_rs(dia_rs)} ({_pct(dia_rs / dia_base)})" if dia_base
+                             else "nada recomprado hoje"))
             if any(q < 0 for q in pos_dia.values()):
+                linhas.append(f"DIA AINDA VENDIDO: {pos_dia}")
                 alertas.avisar("DIA DORMIU VENDIDO", str(pos_dia), "urgente", cfg.ntfy_topico)
-        alertas.avisar("Fim do pregão", msg, "info", cfg.ntfy_topico)
-        resumo |= {"livro": livro, "dia": pos_dia}
+        total = noite_rs + dia_rs
+        acumulado = registrar_pnl(hoje, noite_rs, dia_rs)
+        capital = cfg.capital_noite + cfg.capital_dia
+        linhas.append(f"Hoje: {_rs(total)}" + (f" ({_pct(total / capital)} do capital)"
+                                                if capital else "")
+                      + f" | acumulado: {_rs(acumulado)}")
+        linhas.append("Call comprou para a noite: " + _lista(compras))
+        alertas.avisar(f"Fim do pregão: hoje {_rs(total)}", "\n".join(linhas), "info",
+                       cfg.ntfy_topico)
+        resumo |= {"livro": livro, "dia": pos_dia, "pnl_noite": round(noite_rs, 2),
+                   "pnl_dia": round(dia_rs, 2), "pnl_acumulado": round(acumulado, 2)}
 
     for a in avisos:
         alertas.avisar(f"Aviso ({etapa})", a, "aviso", cfg.ntfy_topico)
@@ -635,20 +749,25 @@ def main() -> None:
         return
     cfg = Config.ler()
     usar_pasta(cfg.modo)
-    p = operacao._carregar()
-    if a.comando == "teste":
-        teste(cfg, p)
-        return
-    if a.comando == "status":
-        print(f"modo {cfg.modo}; noite R$ {cfg.capital_noite:,.0f}; dia R$ {cfg.capital_dia:,.0f}"
-              f"; {'PARADO' if PARAR.exists() else 'ativo'}")
-        print(f"livro da noite: {livro_noite() or 'vazio'}")
-        print(json.dumps(_ler_json(arquivo_do_dia(date.today()), {}), indent=2,
-                         ensure_ascii=False))
-        return
-    if a.forcar_horario and cfg.modo != "simulado":
-        raise SystemExit("--forcar-horario só vale no modo simulado")
-    rodar(a.comando, cfg, p, datetime.now(), forcar_horario=a.forcar_horario)
+    try:
+        p = operacao._carregar()
+        if a.comando == "teste":
+            teste(cfg, p)
+            return
+        if a.comando == "status":
+            print(f"modo {cfg.modo}; noite R$ {cfg.capital_noite:,.0f}; "
+                  f"dia R$ {cfg.capital_dia:,.0f}; {'PARADO' if PARAR.exists() else 'ativo'}")
+            print(f"livro da noite: {livro_noite() or 'vazio'}")
+            print(json.dumps(_ler_json(arquivo_do_dia(date.today()), {}), indent=2,
+                             ensure_ascii=False))
+            return
+        if a.forcar_horario and cfg.modo != "simulado":
+            raise SystemExit("--forcar-horario só vale no modo simulado")
+        rodar(a.comando, cfg, p, datetime.now(), forcar_horario=a.forcar_horario)
+    except Exception as e:  # numa tarefa agendada ninguém vê o erro: ele vira aviso no celular
+        alertas.avisar(f"ERRO no executor ({a.comando})", f"{type(e).__name__}: {e}", "urgente",
+                       cfg.ntfy_topico)
+        raise
 
 
 if __name__ == "__main__":
