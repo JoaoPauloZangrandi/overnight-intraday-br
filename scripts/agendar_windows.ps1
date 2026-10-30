@@ -20,12 +20,16 @@
 # Uso (PowerShell, na pasta do repositório):
 #   powershell -ExecutionPolicy Bypass -File scripts\agendar_windows.ps1 -Capital 100000 -Executor
 #   powershell -ExecutionPolicy Bypass -File scripts\agendar_windows.ps1 -Capital 100000
+# Na nuvem (a máquina só liga às 9h05; as tarefas rodam na sessão do Administrator):
+#   ... -Capital 100000 -Executor -HoraDados 09:15 -Usuario Administrator
 # Para remover tudo:
 #   Get-ScheduledTask 'OvernightBR*' | Unregister-ScheduledTask -Confirm:$false
 param(
     [Parameter(Mandatory = $true)][double]$Capital,
     [ValidateSet("so_noite", "noite_e_dia")][string]$Versao = "so_noite",
     [string]$InicioPapel = (Get-Date -Format "yyyy-MM-dd"),
+    [string]$HoraDados = "08:00",  # a escolha roda 10 minutos depois e o papel, 15
+    [string]$Usuario = "",  # registra para outro usuário, na sessão dele (o MT5 roda nela)
     [switch]$Executor
 )
 $Repo = Split-Path -Parent $PSScriptRoot
@@ -33,11 +37,15 @@ $Rodar = Join-Path $PSScriptRoot "rodar.ps1"
 $Uv = (Get-Command uv -ErrorAction Stop).Source
 $Dias = "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"
 $Cap = $Capital.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+$Dados = [datetime]::ParseExact($HoraDados, "HH:mm", $null)
 $Tarefas = @(
-    @{ Nome = "1-dados"; Hora = "08:00"; Args = "atualizar" },
-    @{ Nome = "2-escolha"; Hora = "08:10"; Args = "escolha" },
-    @{ Nome = "3-papel"; Hora = "08:15"; Args = "papel --inicio $InicioPapel" }
+    @{ Nome = "1-dados"; Hora = $Dados.ToString("HH:mm"); Args = "atualizar" },
+    @{ Nome = "2-escolha"; Hora = $Dados.AddMinutes(10).ToString("HH:mm"); Args = "escolha" },
+    @{ Nome = "3-papel"; Hora = $Dados.AddMinutes(15).ToString("HH:mm")
+       Args = "papel --inicio $InicioPapel" }
 )
+$Quem = @{}
+if ($Usuario) { $Quem.Principal = New-ScheduledTaskPrincipal -UserId $Usuario -LogonType Interactive }
 if ($Executor) {
     $Tarefas += @(
         @{ Nome = "4-abertura"; Hora = "09:46"; Args = "abertura"; Modulo = "executor" },
@@ -69,6 +77,6 @@ foreach ($t in $Tarefas) {
     $opcoes = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -StartWhenAvailable:$false -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
     Register-ScheduledTask -TaskName "OvernightBR $($t.Nome)" -Action $acao -Trigger $gatilho `
-        -Settings $opcoes -Force | Out-Null
+        -Settings $opcoes @Quem -Force | Out-Null
     Write-Host "agendada: OvernightBR $($t.Nome) às $($t.Hora)"
 }
