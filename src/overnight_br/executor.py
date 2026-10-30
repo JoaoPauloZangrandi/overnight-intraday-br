@@ -334,6 +334,18 @@ def carteira(p: pd.DataFrame, hoje: date, para_a_noite: bool) -> list[str]:
     return operacao.carteira_do_mes(p, mes)
 
 
+def _carteira_ou_aviso(p: pd.DataFrame, hoje: date, para_a_noite: bool, cfg: Config) -> list[str]:
+    """A carteira do mês. Com os dados atrasados, nenhuma ação e um aviso urgente: as etapas
+    seguem só com o que fecha posição (a venda da noite)."""
+    try:
+        return carteira(p, hoje, para_a_noite=para_a_noite)
+    except operacao.DadosAtrasados as e:
+        alertas.avisar("Sem carteira: dados atrasados",
+                       f"{e}. Sem a carteira, esta etapa não abriu posição nova.", "urgente",
+                       cfg.ntfy_topico)
+        return []
+
+
 def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
           forcar_horario: bool = False, contas: dict[str, Corretora] | None = None) -> dict:
     """Roda uma etapa do pregão. `contas` permite injetar corretoras (testes)."""
@@ -373,7 +385,6 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
     resumo = {"quando": agora.isoformat(timespec="seconds")}
 
     if etapa == "abertura":
-        alvo = carteira(p, hoje, para_a_noite=False)
         noite = abrir("noite")
         ordens, a = planejar_venda_noite(noite.posicoes(), livro_noite(), ref, cfg.protecao)
         ordens, a2, enviado = aplicar_tetos(ordens, ref, cfg, enviado)
@@ -382,6 +393,7 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
         resumo["noite"] = len(ordens)
         _fechar(noite, ref, hoje)
         if usa_dia:
+            alvo = _carteira_ou_aviso(p, hoje, False, cfg)
             dia = abrir("dia")
             ordens, a = planejar_venda_dia(dia.posicoes(), alvo, cfg.capital_dia, ref,
                                            cfg.protecao)
@@ -439,7 +451,7 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
         _fechar(dia, {}, hoje)
 
     elif etapa == "call":
-        alvo = carteira(p, hoje, para_a_noite=True)
+        alvo = _carteira_ou_aviso(p, hoje, True, cfg)
         noite = abrir("noite")
         ref_call = {}
         for t in alvo:
@@ -546,8 +558,12 @@ def checar() -> list[tuple[str, bool, str]]:
     item("dados atualizados", ultimo >= vespera, f"último pregão nos dados: {ultimo:%d/%m/%Y}"
          + ("" if ultimo >= vespera else " (rode: uv run python -m overnight_br.operacao "
                                           "atualizar)"))
-    alvo = carteira(p, hoje, para_a_noite=operacao.ultimo_pregao_do_mes(hoje))
-    item("carteira do mês", len(alvo) == 5, ", ".join(alvo))
+    try:
+        alvo = carteira(p, hoje, para_a_noite=operacao.ultimo_pregao_do_mes(hoje))
+        item("carteira do mês", len(alvo) == 5, ", ".join(alvo))
+    except operacao.DadosAtrasados as e:
+        alvo = []
+        item("carteira do mês", False, str(e))
     fuso = datetime.now().astimezone().utcoffset()
     item("relógio no horário de Brasília", fuso == pd.Timedelta(hours=-3),
          f"UTC{fuso.total_seconds() / 3600:+.0f}")

@@ -1,7 +1,8 @@
 """Trava o executor: um pregão inteiro no simulado, as travas e o pedido ao MetaTrader 5."""
 from __future__ import annotations
 
-from datetime import date, datetime, time
+import json
+from datetime import date, datetime, time, timezone
 from types import SimpleNamespace
 
 import pandas as pd
@@ -100,6 +101,24 @@ def test_janelas_seguem_o_horario_de_verao_americano():
     assert executor.janelas(date(2026, 12, 2))["cobrir"][1] == time(17, 38)
 
 
+def test_sem_carteira_por_dados_atrasados_so_a_venda_da_noite_sai(monkeypatch):
+    cfg, contas = _cfg(), _contas()
+    _rodar("call", cfg, contas)  # quarta, com a carteira: compra para a noite
+
+    def atrasado(p, hoje, para_a_noite):
+        raise executor.operacao.DadosAtrasados("dados até 22/10")
+
+    monkeypatch.setattr(executor, "carteira", atrasado)
+    _rodar("abertura", cfg, contas, QUINTA)
+    assert contas["noite"].posicoes() == {}  # a noite vende o que dormiu mesmo assim
+    assert contas["dia"].posicoes() == {}    # mas o dia não abre vendido
+    _rodar("call", cfg, contas, QUINTA)
+    assert contas["noite"].posicoes() == {}  # e o call não compra
+    linhas = [json.loads(x) for x in alertas.REGISTRO.read_text(encoding="utf-8").splitlines()]
+    urgentes = [x for x in linhas if x["evento"] == "aviso" and x["nivel"] == "urgente"]
+    assert len(urgentes) == 2 and all("dados atrasados" in x["titulo"] for x in urgentes)
+
+
 def test_cobertura_agride_a_oferta_de_venda():
     ordens = executor.planejar_cobertura({"AAAA3": -300, "BBBB3": 100},
                                          {"AAAA3": {"venda": 10.0}})
@@ -175,6 +194,23 @@ def test_algo_trading_desligado_vira_mensagem_clara():
     conta = MetaTrader5("noite", "t.exe", mt5=_FakeMT5Conta(retcode=10027), tipo_esperado="demo")
     with pytest.raises(Exception, match="Algo Trading"):
         conta.enviar(Ordem("AAAA3", COMPRA, 100, 10.0))
+
+
+class _FakeMT5Negocios(_FakeMT5):
+    """O MT5 de mentira com um negócio no call de 03/11/2026, às 17h56m30s de Brasília."""
+    DEAL_TYPE_BUY, DEAL_TYPE_SELL = 0, 1
+
+    def history_deals_get(self, inicio, fim):
+        # como o MT5 da XP manda: a hora do servidor, codificada como se fosse UTC
+        hora = datetime(2026, 11, 3, 17, 56, 30, tzinfo=timezone.utc).timestamp()
+        return [SimpleNamespace(type=0, symbol="AAAA3", volume=300.0, price=10.0,
+                                time=int(hora), order=7)]
+
+
+def test_hora_do_negocio_e_a_do_servidor_do_mt5():
+    conta = MetaTrader5("noite", "t.exe", mt5=_FakeMT5Negocios())
+    (negocio,) = conta.execucoes(datetime(2026, 11, 3))
+    assert negocio.quando == datetime(2026, 11, 3, 17, 56, 30)
 
 
 def test_cada_modo_tem_sua_pasta(tmp_path, monkeypatch):

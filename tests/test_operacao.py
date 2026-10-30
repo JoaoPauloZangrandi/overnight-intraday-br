@@ -95,6 +95,33 @@ def test_escolha_ignora_a_acao_que_so_teve_meia_duzia_de_noites_boas():
     assert e["noite_bp"].max() < 40  # a TX3 nem aparece entre as 5
 
 
+def test_vespera_da_decisao_sai_do_calendario_da_b3():
+    assert op.vespera_da_decisao(pd.Period("2026-11", "M")) == pd.Timestamp("2026-10-29")
+    assert op.vespera_da_decisao(pd.Period("2026-12", "M")) == pd.Timestamp("2026-11-27")
+    # 31/12 não tem pregão: a decisão é em 30/12, com os dados até 29/12
+    assert op.vespera_da_decisao(pd.Period("2027-01", "M")) == pd.Timestamp("2026-12-29")
+
+
+def test_escolha_com_dados_atrasados_recusa_e_nao_grava(tmp_path, monkeypatch):
+    monkeypatch.setattr(op, "PASTA", tmp_path)
+    p = _painel_sintetico()
+    with pytest.raises(op.DadosAtrasados, match="29/10/2026"):
+        op.carteira_do_mes(p[p["data"] <= "2026-10-22"], pd.Period("2026-11", "M"))
+    assert not (tmp_path / "escolha_2026-11.csv").exists()
+
+
+def test_arquivo_da_escolha_feito_com_outros_dados_e_refeito(tmp_path, monkeypatch):
+    monkeypatch.setattr(op, "PASTA", tmp_path)
+    # o arquivo velho, feito com os dados até 22/10, punha a T03
+    pd.DataFrame({"ticker": ["T03"], "dados_ate": ["2026-10-22"]}).to_csv(
+        tmp_path / "escolha_2026-11.csv", index=False)
+    p, novembro = _painel_sintetico(), pd.Period("2026-11", "M")
+    assert op.carteira_do_mes(p, novembro) == ["T63", "T53", "T43", "T33", "T23"]
+    assert set(pd.read_csv(tmp_path / "escolha_2026-11.csv")["dados_ate"]) == {"2026-10-29"}
+    # gravado com os dados certos, o arquivo vale sozinho, sem o painel
+    assert op.carteira_do_mes(p.iloc[:0], novembro) == ["T63", "T53", "T43", "T33", "T23"]
+
+
 def test_conferir_mede_o_custo_em_relacao_ao_leilao():
     p = pd.DataFrame({"data": pd.to_datetime(["2026-11-03"] * 2), "ticker": ["A3", "B3"],
                       "abertura_acao": [10.0, 20.0], "fechamento_acao": [10.0, 20.0]})

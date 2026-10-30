@@ -142,21 +142,46 @@ def escolhas_historicas(p: pd.DataFrame, desde: pd.Period) -> pd.DataFrame:
     return pd.DataFrame(linhas, columns=["mes", "ticker"])
 
 
-def carteira_do_mes(p: pd.DataFrame, mes: pd.Period) -> list[str]:
-    """As 5 do mês: lidas do arquivo da escolha ou, se ele não existir, recalculadas pela regra
-    (decisão no último pregão do mês anterior, com os dados até a véspera)."""
+class DadosAtrasados(RuntimeError):
+    """O painel não chega até o dia de que a escolha do mês precisa."""
+
+
+def vespera_da_decisao(mes: pd.Period) -> pd.Timestamp:
+    """Até onde vão os dados da escolha de `mes`: a véspera do último pregão do mês anterior
+    (é nesse pregão que a carteira troca). Sai do calendário da B3, e não dos dados, para que
+    dados atrasados não passem despercebidos."""
+    d = (mes - 1).end_time.date()
+    while not eh_pregao(d):
+        d = d - pd.Timedelta(days=1)
+    d = d - pd.Timedelta(days=1)  # do último pregão do mês anterior para a véspera
+    while not eh_pregao(d):
+        d = d - pd.Timedelta(days=1)
+    return pd.Timestamp(d)
+
+
+def escolha_oficial(p: pd.DataFrame, mes: pd.Period) -> pd.DataFrame:
+    """As 5 do mês, com os dados até a véspera da decisão. Lidas do arquivo da escolha se ele
+    foi feito com esses dados; senão, recalculadas e gravadas. Sem os dados da véspera, recusa:
+    em 30/10/2026, uma escolha feita com os dados até 22/10 pôs a HAPV3, que no dia 26 caiu
+    abaixo do piso de R$ 5."""
+    ate = vespera_da_decisao(mes)
     arquivo = PASTA / f"escolha_{mes}.csv"
     if arquivo.exists():
-        return list(pd.read_csv(arquivo)["ticker"])
-    cal = pd.DatetimeIndex(np.sort(p["data"].unique()))
-    anteriores = cal[cal.to_period("M") == mes - 1]
-    if len(anteriores) and anteriores[-1] < cal[-1]:
-        ate = cal[cal.get_loc(anteriores[-1]) - 1]  # o mês anterior já fechou nos dados
-    else:
-        ate = cal[-1]  # hoje é o último pregão do mês: decide com os dados até ontem
-    e = escolha_para(p, mes, ate)
+        e = pd.read_csv(arquivo, index_col="ticker")
+        if "dados_ate" in e and (pd.to_datetime(e["dados_ate"]) == ate).all():
+            return e
+    if not (p["data"] == ate).any():
+        raise DadosAtrasados(f"a escolha de {mes} usa os dados até {ate:%d/%m/%Y}, mas o "
+                             f"painel vai até {p['data'].max():%d/%m/%Y} (rode: uv run python "
+                             "-m overnight_br.operacao atualizar)")
+    e = escolha_para(p, mes, ate).assign(dados_ate=ate.date())
     e.to_csv(arquivo, float_format="%.4f")
-    return list(e.index)
+    return e
+
+
+def carteira_do_mes(p: pd.DataFrame, mes: pd.Period) -> list[str]:
+    """As 5 do mês, decididas no último pregão do mês anterior com os dados até a véspera."""
+    return list(escolha_oficial(p, mes).index)
 
 
 # --- boleta ---------------------------------------------------------------------------------
@@ -301,11 +326,13 @@ def main() -> None:
     if a.comando == "escolha":
         mes_alvo = pd.Period(proximo_pregao(hoje), freq="M") if ultimo_pregao_do_mes(hoje) \
             else pd.Period(hoje, freq="M") + 1
-        e = escolha_para(p, mes_alvo, ultimo_dado)
-        e.to_csv(PASTA / f"escolha_{mes_alvo}.csv", float_format="%.4f")
-        oficial = ultimo_pregao_do_mes(hoje)
-        print(f"Carteira de {mes_alvo} com dados até {ultimo_dado:%d/%m/%Y}"
-              + ("" if oficial else " (PRÉVIA: a escolha oficial é no último pregão do mês)"))
+        try:
+            e = escolha_oficial(p, mes_alvo)
+            print(f"Carteira de {mes_alvo} com dados até {vespera_da_decisao(mes_alvo):%d/%m/%Y}")
+        except DadosAtrasados:  # a prévia só mostra: gravada, viraria a carteira do executor
+            e = escolha_para(p, mes_alvo, ultimo_dado)
+            print(f"Carteira de {mes_alvo} com dados até {ultimo_dado:%d/%m/%Y} (PRÉVIA: a "
+                  f"oficial usa os dados até {vespera_da_decisao(mes_alvo):%d/%m/%Y})")
         print(e[["nome", "aparada_bp", "noite_bp", "pregao_bp", "fechamento_acao"]].round(2)
               .to_string())
         return

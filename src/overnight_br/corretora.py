@@ -18,7 +18,7 @@ from __future__ import annotations
 import itertools
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import ClassVar, Protocol
 
 COMPRA, VENDA = "compra", "venda"
@@ -239,7 +239,9 @@ class MetaTrader5:
         for d in negocios:
             if d.type not in (m.DEAL_TYPE_BUY, m.DEAL_TYPE_SELL):
                 continue  # depósito, taxa, ajuste
-            quando = datetime.fromtimestamp(d.time)
+            # o MT5 manda a hora do servidor (Brasília, na XP) como se fosse UTC; lida como
+            # hora local, sairia 3 horas antes
+            quando = datetime.fromtimestamp(d.time, timezone.utc).replace(tzinfo=None)
             if quando < desde:
                 continue
             out.append(Execucao(d.symbol, COMPRA if d.type == m.DEAL_TYPE_BUY else VENDA,
