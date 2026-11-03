@@ -589,6 +589,52 @@ def etapa5(tab: pd.DataFrame, av: Avaliador) -> list[dict]:
     return linhas
 
 
+LEILAO_SOBRE_VOLUME = 0.002  # leilão de abertura / volume do dia, mediana (custos_b3, out/2026)
+CAPITAL_NOITE = 50_000.0  # R$ de out/2026
+
+
+def ipca_indice() -> pd.Series:
+    """Número-índice mensal do IPCA (SGS 433), = 1 no último mês publicado. Em data/raw."""
+    arquivo = cotahist.RAIZ / "data" / "raw" / "ipca_sgs433.csv"
+    if not arquivo.exists():
+        import json
+        import urllib.request
+        url = ("https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados?formato=json"
+               "&dataInicial=01/01/2000&dataFinal=31/10/2026")
+        pedido = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(pedido, timeout=120) as resp:
+            pd.DataFrame(json.loads(resp.read())).to_csv(arquivo, index=False)
+    x = pd.read_csv(arquivo)
+    s = pd.Series(x["valor"].astype(float).to_numpy() / 100,
+                  index=pd.PeriodIndex(pd.to_datetime(x["data"], dayfirst=True), freq="M"))
+    i = (1 + s).cumprod()
+    return i / i.iloc[-1]  # o último publicado (o IPCA sai uns 10 dias depois do mês)
+
+
+def com_trava(tab: pd.DataFrame, limite: float, n_noite: int) -> pd.DataFrame:
+    """Só as candidatas em que a ordem da noite (capital / n, em R$ do mês pelo IPCA) cabe em
+    `limite` do leilão de abertura estimado (LEILAO_SOBRE_VOLUME x volume mediano de 12m)."""
+    ordem = CAPITAL_NOITE / n_noite * ipca_indice().reindex(pd.PeriodIndex(tab["mes"])).to_numpy()
+    return tab[ordem <= limite * LEILAO_SOBRE_VOLUME * tab["volume_12m"].to_numpy()]
+
+
+def etapa6(tab: pd.DataFrame, av: Avaliador) -> list[dict]:
+    """A trava de liquidez na noite: a ordem cabe em 5% ou 10% do leilão de abertura estimado.
+    Nos híbridos da etapa 5 e na atual."""
+    linhas = []
+    casos = [(sn, 100, nn) for sn in ("n_aparada_12m", "n_aparada_6m") for nn in (3, 5)]
+    casos.append((ATUAL["sinal_noite"], 50, 5))
+    for (sn, un, nn), lim in itertools.product(casos, (0.05, 0.10)):
+        en = escolher(com_trava(tab, lim, nn), sn, 1, un, nn)
+        ed = escolher(tab, ATUAL["sinal_dia"], 1, 50, 5, perna="dia")
+        linhas.append({"etapa": 6, "tipo": f"trava de liquidez {lim:.0%} do leilão",
+                       "versao": "ambas", "sinal_noite": sn, "sentido_noite": 1,
+                       "sinal_dia": ATUAL["sinal_dia"], "sentido_dia": 1, "universo": un,
+                       "n_noite": nn, "n_dia": 5, "peso": "igual"}
+                      | av.regra(en, ed, "noite_e_dia"))
+    return linhas
+
+
 def estresse_custo(tab: pd.DataFrame, av: Avaliador, t: pd.DataFrame) -> pd.DataFrame:
     """A atual e os híbridos da etapa 5 com custo extra por lado na noite das ações fora das 50
     mais líquidas (medido em custos_b3: meio spread mediano das 51-100 ~2 bp, p90 ~7 bp). Não é
@@ -663,7 +709,7 @@ def main() -> None:
         t = t[t["etapa"] < etapa]
     novas = {1: lambda: etapa1(tab, av), 2: lambda: etapa2(tab, av, t),
              3: lambda: etapa3(tab, av, t), 4: lambda: etapa4(tab, av, t, b),
-             5: lambda: etapa5(tab, av)}[etapa]()
+             5: lambda: etapa5(tab, av), 6: lambda: etapa6(tab, av)}[etapa]()
     t = pd.concat([t, pd.DataFrame(novas)], ignore_index=True)
     t.to_csv(ARQUIVO, index=False, float_format="%.6f")
     resumo(t)
