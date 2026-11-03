@@ -28,14 +28,27 @@ Uso: uv run python -m overnight_br.refino 1   (depois 2, 3 e 4; cada etapa lê a
 """
 from __future__ import annotations
 
+import io
 import itertools
 import sys
 import warnings
+import zipfile
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
 
-from overnight_br import backtest, busca, carteira, cotahist, decisao, execucao, imposto_pf, universo
+from overnight_br import (
+    b3_publico,
+    backtest,
+    busca,
+    carteira,
+    cotahist,
+    decisao,
+    execucao,
+    imposto_pf,
+    universo,
+)
 
 ESTUDO_INICIO, ESTUDO_FIM = pd.Timestamp("2006-01-01"), pd.Timestamp("2024-10-31")
 PROVA_INICIO, PROVA_FIM = pd.Timestamp("2024-11-01"), pd.Timestamp("2026-10-31")
@@ -503,6 +516,105 @@ def etapa4(tab: pd.DataFrame, av: Avaliador, t: pd.DataFrame, b: Base) -> list[d
     return linhas
 
 
+def _custos_do_dia(texto: str) -> dict:
+    """Do negócio a negócio de um pregão (horário de verão americano: call às 16h55): o volume
+    dos dois leilões, o último negócio antes da recompra das 16h30, o preço do call e o spread
+    de Roll das 16h00 às 16h55 (como o b3_publico)."""
+    x = pd.read_csv(io.StringIO(texto), sep=";", decimal=",",
+                    usecols=["AcaoAtualizacao", "PrecoNegocio", "QuantidadeNegociada",
+                             "HoraFechamento", "TipoSessaoPregao"])
+    x = x[(x["AcaoAtualizacao"] == 0) & (x["TipoSessaoPregao"] == 1)].sort_values(
+        "HoraFechamento", kind="stable")
+    h = x["HoraFechamento"].to_numpy() // 1000
+    p, q = x["PrecoNegocio"].to_numpy(), x["QuantidadeNegociada"].to_numpy()
+    abre, call = h == h[0], h >= b3_publico.INICIO_DO_CALL
+    j = (h >= 160000) & (h < b3_publico.INICIO_DO_CALL)
+    dp = np.diff(p[j])
+    c = np.cov(dp[1:], dp[:-1])[0, 1] if len(dp) > 30 else np.nan
+    antes = h < 163000
+    return {"preco_call": p[-1], "p1630": p[antes][-1] if antes.any() else np.nan,
+            "leilao_abertura_rs": float((p[abre] * q[abre]).sum()),
+            "leilao_call_rs": float((p[call] * q[call]).sum()),
+            "spread_roll": 2 * np.sqrt(-c) if not np.isnan(c) and c < 0 else np.nan,
+            "fim": h[-1]}
+
+
+def custos_b3() -> pd.DataFrame:
+    """Custo de negociar medido nos negócios da B3 (os ~21 pregões que ela guarda, out/2026), das
+    100 mais líquidas de 2026, por ação: o meio spread perto da recompra, quanto o preço anda da
+    recompra (16h30) ao call e o volume dos leilões. Mede custo, não retorno: não abre a prova."""
+    p = pd.read_parquet(cotahist.PROCESSADO.parent / "painel.parquet",
+                        columns=["data", "ticker", "volume", "ano"])
+    cal = pd.DatetimeIndex(np.sort(p["data"].unique()))
+    u = universo.escolher(p, cal, n=100)
+    u = u[u["ano"] == u["ano"].max()]
+
+    def um(ticker: str, dia: str) -> dict:
+        try:
+            b = b3_publico._baixar(b3_publico.URL_NEGOCIOS.format(ticker=ticker, dia=dia))
+        except RuntimeError:
+            return {}
+        if b is None:
+            return {}
+        z = zipfile.ZipFile(io.BytesIO(b))
+        r = _custos_do_dia(z.read(z.namelist()[0]).decode("latin-1"))
+        return {"ticker": ticker, "dia": dia} | r if r["fim"] >= b3_publico.INICIO_DO_CALL else {}
+
+    # só o horário de verão americano (call às 16h55): de 03/11/2026 em diante o call é às 17h55
+    dias = [d for d in b3_publico.ultimos_pregoes(30) if d <= "2026-10-30"]
+    pares = [(t, d) for t in u["ticker"] for d in dias]
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        x = pd.DataFrame([r for r in ex.map(lambda a: um(*a), pares) if r])
+    x["meio_spread_bp"] = x["spread_roll"] / 2 / x["preco_call"] * 1e4
+    x["recompra_menos_call_bp"] = (x["preco_call"] / x["p1630"] - 1) * 1e4
+    por = x.groupby("ticker").agg(
+        pregoes=("dia", "nunique"), meio_spread_bp=("meio_spread_bp", "median"),
+        recompra_menos_call_bp=("recompra_menos_call_bp", "mean"),
+        leilao_abertura_rs=("leilao_abertura_rs", "median"),
+        leilao_call_rs=("leilao_call_rs", "median"), preco=("preco_call", "median"))
+    return u.set_index("ticker")[["posicao"]].join(por, how="inner").reset_index()
+
+
+def etapa5(tab: pd.DataFrame, av: Avaliador) -> list[dict]:
+    """O híbrido: a noite escolhe entre as 100 mais líquidas (ela só negocia nos leilões) e o
+    dia entre as 50 (ele recompra no pregão contínuo, onde a ação média paga mais spread)."""
+    linhas = []
+    for sn, nn, nd in itertools.product(("n_aparada_12m", "n_aparada_6m"), (3, 5), (5, 8)):
+        en = escolher(tab, sn, 1, 100, nn)
+        ed = escolher(tab, ATUAL["sinal_dia"], 1, 50, nd, perna="dia")
+        linhas.append({"etapa": 5, "tipo": "híbrido: noite nas 100, dia nas 50", "versao": "ambas",
+                       "sinal_noite": sn, "sentido_noite": 1, "sinal_dia": ATUAL["sinal_dia"],
+                       "sentido_dia": 1, "universo": 100, "n_noite": nn, "n_dia": nd,
+                       "peso": "igual"} | av.regra(en, ed, "noite_e_dia"))
+    return linhas
+
+
+def estresse_custo(tab: pd.DataFrame, av: Avaliador, t: pd.DataFrame) -> pd.DataFrame:
+    """A atual e os híbridos da etapa 5 com custo extra por lado na noite das ações fora das 50
+    mais líquidas (medido em custos_b3: meio spread mediano das 51-100 ~2 bp, p90 ~7 bp). Não é
+    regra nova: é a mesma regra com mais custo, então não entra no ledger."""
+    fora = tab.set_index(["mes", "ticker"])["posicao"] > 50
+    regras = [("atual", ATUAL["sinal_noite"], 50, 5, 5)] + [
+        (f"híbrido {r.sinal_noite} {int(r.n_noite)}n/{int(r.n_dia)}d", r.sinal_noite, 100,
+         int(r.n_noite), int(r.n_dia)) for r in t[t["etapa"] == 5].itertuples()]
+    linhas = []
+    for nome, sn, un, nn, nd in regras:
+        en = escolher(tab, sn, 1, un, nn)
+        ed = escolher(tab, ATUAL["sinal_dia"], 1, 50, nd, perna="dia")
+        d0 = av.componentes(en, ed)
+        wn = av.pesos(en.assign(peso=en["peso"] * fora.reindex(
+            pd.MultiIndex.from_frame(en[["mes", "ticker"]])).fillna(False).to_numpy()))
+        frac = pd.Series(wn.sum(axis=1) / np.maximum(av.pesos(en).sum(axis=1), 1e-12),
+                         index=av.datas).reindex(d0.index).fillna(0)
+        for bp in (0, 2, 5, 10, 20):
+            d = d0.assign(dt_noite=d0["dt_noite"] - 2 * bp / 1e4 * frac * d0["tem_noite"])
+            m = av.medir(d, "noite_e_dia")
+            linhas.append({"regra": nome, "extra_bp_lado": bp, "fracao_fora_50": frac.mean(),
+                           "pior": m["pior"], "sharpe_estudo": m["sharpe_estudo"],
+                           "ao_ano_depois_ir": m["ao_ano_depois_ir"], "queda_max": m["queda_max"]})
+    return pd.DataFrame(linhas)
+
+
 def resumo(t: pd.DataFrame) -> None:
     """A atual, as melhores e o limite de sorte com todas as tentativas até aqui."""
     atual = t[(t["etapa"] == 1) & (t["versao"] == "ambas") & (t["sinal_noite"] == ATUAL[
@@ -523,6 +635,21 @@ def resumo(t: pd.DataFrame) -> None:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "custos":
+        c = custos_b3()
+        c.to_csv(RESULTADOS / "refino_custos_b3.csv", index=False, float_format="%.4f")
+        g = c.assign(grupo=np.where(c["posicao"] <= 50, "1-50", "51-100")).groupby("grupo")
+        print(g[["pregoes", "meio_spread_bp", "recompra_menos_call_bp", "leilao_abertura_rs",
+                 "leilao_call_rs", "preco"]].median().round(2).to_string())
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "estresse":
+        b = Base()
+        tab, av = pd.read_parquet(TABELA), Avaliador(b)
+        e = estresse_custo(tab, av, pd.read_csv(ARQUIVO))
+        e.to_csv(RESULTADOS / "refino_estresse_custo.csv", index=False, float_format="%.4f")
+        print(e.pivot(index="regra", columns="extra_bp_lado", values="pior").round(3).to_string())
+        print(e[e["extra_bp_lado"] == 0].set_index("regra")[["fracao_fora_50"]].round(2).to_string())
+        return
     etapa = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     b = Base()
     if TABELA.exists() and etapa > 1:
@@ -535,7 +662,8 @@ def main() -> None:
     if not t.empty:
         t = t[t["etapa"] < etapa]
     novas = {1: lambda: etapa1(tab, av), 2: lambda: etapa2(tab, av, t),
-             3: lambda: etapa3(tab, av, t), 4: lambda: etapa4(tab, av, t, b)}[etapa]()
+             3: lambda: etapa3(tab, av, t), 4: lambda: etapa4(tab, av, t, b),
+             5: lambda: etapa5(tab, av)}[etapa]()
     t = pd.concat([t, pd.DataFrame(novas)], ignore_index=True)
     t.to_csv(ARQUIVO, index=False, float_format="%.6f")
     resumo(t)
