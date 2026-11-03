@@ -133,6 +133,52 @@ def test_pnl_da_noite_e_do_dia_nos_avisos(pasta):
     assert f"Fim do pregão: hoje {executor._rs(0.02 * custo + dia_rs)}" in titulos
 
 
+def test_resultado_oficial_usa_os_precos_da_b3_e_as_quantidades_executadas(pasta):
+    """A demo executa no preço-limite; o resultado que vale é o das quantidades executadas aos
+    preços oficiais. Quarta: o dia vende e recompra, o call compra. Quinta: a noite vende."""
+    noite, dia = uma_conta(PRECOS)
+    cfg, contas = _cfg(), {"noite": noite, "dia": dia}
+    TERCA = date(2026, 10, 20)
+
+    def painel(*dias):  # (data, abertura, fechamento) iguais para todas as ações, em múltiplos
+        return pd.DataFrame([{"data": pd.Timestamp(d), "ticker": t, "abertura_acao": v * a,
+                              "fechamento_acao": v * f} for d, a, f in dias
+                             for t, v in PRECOS.items()])
+
+    def etapa(nome, quando, p):
+        executor.rodar(nome, cfg, p, datetime.combine(quando, time(12)), forcar_horario=True,
+                       contas=contas)
+
+    p_quarta = painel((TERCA, 1.0, 1.0))
+    for nome in ("abertura", "conferir", "cobrir", "call", "fim"):
+        etapa(nome, QUARTA, p_quarta)
+    # quinta 10h20: o painel já tem a quarta, que abriu 1% acima da terça e fechou 3% acima
+    p_quinta = painel((TERCA, 1.0, 1.0), (QUARTA, 1.01, 1.03))
+    etapa("abertura", QUINTA, p_quinta)
+    etapa("conferir", QUINTA, p_quinta)
+    vendido = {"AAAA3": 1000, "BBBB3": 500, "CCCC3": 400, "DDDD3": 200, "EEEE3": 200}
+    esperado = sum(q * PRECOS[t] * (1.01 - 1.03) for t, q in vendido.items())  # só o dia
+    pnl = pd.read_csv(pasta / "pnl.csv")
+    assert pnl.loc[0, "dia_oficial_rs"] == pytest.approx(esperado, abs=0.01)
+    assert pnl.loc[0, "noite_oficial_rs"] == 0
+    assert any(a["titulo"] == f"21/10 oficial: {executor._rs(esperado)}" for a in _avisos())
+
+    for nome in ("cobrir", "call", "fim"):
+        etapa(nome, QUINTA, p_quinta)
+    # sexta: a quinta abriu 2% acima do fechamento da quarta e fechou igual à abertura
+    p_sexta = painel((QUARTA, 1.01, 1.03), (QUINTA, 1.03 * 1.02, 1.03 * 1.02))
+    etapa("conferir", date(2026, 10, 23), p_sexta)
+    pnl = pd.read_csv(pasta / "pnl.csv")
+    comprado = executor._ler_json(executor.arquivo_do_dia(QUARTA), {})["etapas"]["fim"]["livro"]
+    assert sum(comprado.values()) > 0
+    noite_rs = sum(q * PRECOS[t] * 1.03 * 0.02 for t, q in comprado.items())
+    assert pnl.loc[1, "noite_oficial_rs"] == pytest.approx(noite_rs, abs=0.01)
+    assert pnl.loc[1, "dia_oficial_rs"] == pytest.approx(0, abs=0.01)
+    n = len(_avisos())
+    etapa("conferir", date(2026, 10, 23), p_sexta)  # repetida: não manda de novo
+    assert len(_avisos()) == n
+
+
 def test_erro_numa_etapa_vira_aviso_urgente(tmp_path, monkeypatch):
     monkeypatch.setattr(executor.Config, "ler", classmethod(lambda cls: cls(modo="simulado")))
     monkeypatch.setattr(executor.operacao, "PASTA", tmp_path)

@@ -358,6 +358,69 @@ def registrar_pnl(d: date, noite_rs: float, dia_rs: float) -> float:
     return float(sum(x["total_rs"] for x in linhas))
 
 
+def resultado_oficial(p: pd.DataFrame) -> dict | None:
+    """O resultado do último pregão do painel com os preços oficiais da B3 (COTAHIST), com as
+    quantidades que executaram: a noite vendida nele (abertura dele − fechamento do anterior) e
+    o dia (abertura − fechamento, o oficial mais perto da recompra). A demo executa no
+    preço-limite; é este o resultado que vale. Grava em pnl.csv. None se não houve operação."""
+    datas = sorted(p["data"].unique())
+    if len(datas) < 2:
+        return None
+    d, antes = pd.Timestamp(datas[-1]), pd.Timestamp(datas[-2])
+    etapas = _ler_json(arquivo_do_dia(d.date()), {"etapas": {}})["etapas"]
+    arquivo = PASTA / "pnl.csv"
+    if not etapas or not arquivo.exists():
+        return None
+    t = pd.read_csv(arquivo)
+    sel = t["data"] == d.date().isoformat()
+    if not sel.any() or ("total_oficial_rs" in t and t.loc[sel, "total_oficial_rs"].notna().any()):
+        return None  # sem o fim desse pregão, ou já calculado (dados atrasados não repetem)
+    fim, conf = etapas.get("fim", {}), etapas.get("conferir", {})
+    noite_q = fim.get("qtd_noite_vendida", {})
+    dia_q = fim.get("qtd_dia") or {t: -q for t, q in conf.get("dia_vendido", {}).items() if q < 0}
+    px = p[p["data"].isin([d, antes])].pivot_table(
+        index="ticker", columns="data", values=["abertura_acao", "fechamento_acao"])
+
+    def oficial(col: str, dia: pd.Timestamp, t: str) -> float:
+        return float(px.loc[t, (col, dia)])
+
+    noite = {t: q * (oficial("abertura_acao", d, t) - oficial("fechamento_acao", antes, t))
+             for t, q in noite_q.items()}
+    dia = {t: q * (oficial("abertura_acao", d, t) - oficial("fechamento_acao", d, t))
+           for t, q in dia_q.items()}
+    r = {"data": d.date(), "noite_rs": sum(noite.values()), "dia_rs": sum(dia.values()),
+         "noite": noite, "dia": dia}
+    t.loc[sel, "noite_oficial_rs"] = round(r["noite_rs"], 2)
+    t.loc[sel, "dia_oficial_rs"] = round(r["dia_rs"], 2)
+    t.loc[sel, "total_oficial_rs"] = round(r["noite_rs"] + r["dia_rs"], 2)
+    t.to_csv(arquivo, index=False)
+    r["acumulado"] = float(t["total_oficial_rs"].sum())
+    return r
+
+
+def _aviso_oficial(p: pd.DataFrame, cfg: Config) -> None:
+    """O aviso do resultado oficial do pregão anterior (na conferência, depois dos dados)."""
+    try:
+        r = resultado_oficial(p)
+    except Exception as e:  # o aviso não pode derrubar a conferência
+        alertas.avisar("Resultado oficial falhou", f"{type(e).__name__}: {e}", "aviso",
+                       cfg.ntfy_topico)
+        return
+    if r is None:
+        return
+    total = r["noite_rs"] + r["dia_rs"]
+    capital = cfg.capital_noite + cfg.capital_dia
+    por = lambda x: ", ".join(f"{t} {_rs(v)}" for t, v in sorted(x.items())) or "nada"
+    linhas = [f"Noite: {_rs(r['noite_rs'])} ({por(r['noite'])})",
+              f"Dia: {_rs(r['dia_rs'])} ({por(r['dia'])})",
+              f"Total: {_rs(total)}" + (f" ({_pct(total / capital)} do capital)" if capital else "")
+              + (f" | acumulado oficial: {_rs(r['acumulado'])}" if "acumulado" in r else ""),
+              "Preços oficiais da B3 (abertura e fechamento), sem custos; o dia recompra no "
+              "fechamento oficial."]
+    alertas.avisar(f"{r['data']:%d/%m} oficial: {_rs(total)}", "\n".join(linhas), "info",
+                   cfg.ntfy_topico)
+
+
 def _rs(v: float) -> str:
     return ("-" if v < 0 else "+") + "R$ " + f"{abs(v):,.2f}".translate(str.maketrans(",.", ".,"))
 
@@ -530,8 +593,11 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
                  + (f" = {_rs(rs)} ({_pct(rs / base)})" if base else ""))
         if usa_dia:
             texto += "\nDia vendeu a descoberto: " + _lista(vendas_dia)
+        if cfg.modo != "simulado":
+            texto += "\n(preços da demo/corretora; o oficial de ontem vem em aviso à parte)"
         alertas.avisar(titulo, texto, "info", cfg.ntfy_topico)
         resumo["pnl_noite"] = round(rs, 2)
+        _aviso_oficial(p, cfg)
 
     elif etapa == "cobrir":
         dia = abrir("dia")
@@ -574,6 +640,7 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
         noite = abrir("noite")
         livro = atualizar_livro(noite, meia_noite)
         compras = medias(noite.execucoes(meia_noite), COMPRA)
+        vendas_noite = medias(noite.execucoes(meia_noite), VENDA)
         _fechar(noite, {}, hoje)
         pnl = noite_realizada(hoje)
         noite_rs, noite_base = sum(x[0] for x in pnl.values()), sum(x[1] for x in pnl.values())
@@ -584,7 +651,10 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
         if usa_dia:
             dia = abrir("dia")
             pos_dia = dia.posicoes()
-            res = resultado_dia(dia.execucoes(meia_noite))
+            negocios_dia = dia.execucoes(meia_noite)
+            res = resultado_dia(negocios_dia)
+            vd, cd = medias(negocios_dia, VENDA), medias(negocios_dia, COMPRA)
+            resumo["qtd_dia"] = {t: min(q, cd.get(t, (0, 0))[0]) for t, (q, _) in vd.items()}
             _fechar(dia, {}, hoje)
             dia_rs, dia_base = sum(x[0] for x in res.values()), sum(x[1] for x in res.values())
             linhas.append("Dia (vendido na abertura, recomprado à tarde): "
@@ -600,9 +670,13 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
                                                 if capital else "")
                       + f" | acumulado: {_rs(acumulado)}")
         linhas.append("Call comprou para a noite: " + _lista(compras))
+        if cfg.modo != "simulado":
+            linhas.append("Preços da demo/corretora. O resultado com os preços oficiais da B3 "
+                          "vem amanhã, na conferência das 10h20.")
         alertas.avisar(f"Fim do pregão: hoje {_rs(total)}", "\n".join(linhas), "info",
                        cfg.ntfy_topico)
-        resumo |= {"livro": livro, "dia": pos_dia, "pnl_noite": round(noite_rs, 2),
+        resumo |= {"qtd_noite_vendida": {t: q for t, (q, _) in vendas_noite.items()},
+                   "livro": livro, "dia": pos_dia, "pnl_noite": round(noite_rs, 2),
                    "pnl_dia": round(dia_rs, 2), "pnl_acumulado": round(acumulado, 2)}
 
     for a in avisos:
