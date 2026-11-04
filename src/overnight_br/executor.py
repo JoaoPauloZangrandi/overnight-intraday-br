@@ -85,6 +85,8 @@ teto_por_ordem = 15000.0   # R$: uma ordem maior que isso não sai
 teto_por_pregao = 220000.0 # R$ somados de todas as ordens do pregão
 protecao = 0.05            # limite das ordens de leilão: preço de referência ± 5%
 ntfy_topico = ""           # tópico secreto do app ntfy, para os avisos no celular
+sem_noite = []             # datas extras ("AAAA-MM-DD") em que o call não compra; as eleições
+                           # presidenciais já entram sozinhas (noite_bloqueada)
 
 [noite]
 corretora = "Rico"
@@ -109,6 +111,7 @@ class Config:
     teto_por_pregao: float = 220_000.0
     protecao: float = 0.05
     ntfy_topico: str = ""
+    sem_noite: list = field(default_factory=list)
     noite: dict = field(default_factory=dict)
     dia: dict = field(default_factory=dict)
 
@@ -130,6 +133,27 @@ class Config:
 
 
 # --- calendário -----------------------------------------------------------------------------
+
+def turnos_presidenciais(ano: int) -> list[date]:
+    """Os domingos de eleição presidencial (anos de Copa: 2026, 2030...): o 1º turno no primeiro
+    domingo de outubro e o 2º no último (Constituição, art. 77)."""
+    if ano % 4 != 2:
+        return []
+    domingos = [date(ano, 10, d) for d in range(1, 32) if date(ano, 10, d).weekday() == 6]
+    return [domingos[0], domingos[-1]]
+
+
+def noite_bloqueada(hoje: date, cfg: Config) -> str:
+    """Por que o call de hoje não compra ("" se compra): o último pregão antes de um turno de
+    eleição presidencial (decidido em 04/11/2026: evento binário marcado, ver docs/eleicoes.md)
+    ou uma data de cfg.sem_noite."""
+    if hoje.isoformat() in {str(d) for d in cfg.sem_noite}:
+        return "data marcada em sem_noite no config.toml"
+    for turno in turnos_presidenciais(hoje.year):
+        if hoje < turno <= pd.Timestamp(operacao.proximo_pregao(hoje)).date():
+            return f"eleição presidencial em {turno:%d/%m/%Y}"
+    return ""
+
 
 def janelas(d: date) -> dict[str, tuple[time, time]]:
     """Janela de horário de cada etapa. A B3 acompanha o horário de verão americano: fora dele,
@@ -622,6 +646,12 @@ def rodar(etapa: str, cfg: Config, p: pd.DataFrame, agora: datetime,
 
     elif etapa == "call":
         alvo = _carteira_ou_aviso(p, hoje, True, cfg)
+        motivo = noite_bloqueada(hoje, cfg)
+        if motivo:
+            alertas.avisar("Noite sem posição", f"o call de hoje não compra: {motivo}. O dia "
+                           "seguinte opera só a perna do dia.", "aviso", cfg.ntfy_topico)
+            alvo = []
+            resumo["sem_noite"] = motivo
         noite = abrir("noite")
         ref_call = {}
         for t in alvo:

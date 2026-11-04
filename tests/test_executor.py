@@ -391,3 +391,24 @@ def test_cada_modo_tem_sua_pasta(tmp_path, monkeypatch):
         executor.usar_pasta(modo)
         assert executor.PASTA == tmp_path / pasta
         assert executor.LIVRO_NOITE == tmp_path / pasta / "livro_noite.json"
+
+
+def test_eleicao_presidencial_o_call_da_vespera_nao_compra():
+    assert executor.turnos_presidenciais(2026) == [date(2026, 10, 4), date(2026, 10, 25)]
+    assert executor.turnos_presidenciais(2027) == []
+    cfg = _cfg()
+    assert executor.noite_bloqueada(date(2026, 10, 23), cfg).startswith("eleição")  # sexta
+    assert executor.noite_bloqueada(date(2026, 10, 22), cfg) == ""  # quinta
+    assert executor.noite_bloqueada(date(2026, 10, 26), cfg) == ""  # a segunda volta ao normal
+    assert executor.turnos_presidenciais(2030) == [date(2030, 10, 6), date(2030, 10, 27)]
+    assert executor.noite_bloqueada(date(2030, 10, 4), cfg).startswith("eleição")
+
+
+def test_sem_noite_do_config_bloqueia_o_call():
+    cfg, contas = _cfg(sem_noite=["2026-10-21"]), _contas()
+    estado = _rodar("call", cfg, contas)  # QUARTA = 21/10/2026
+    assert contas["noite"].posicoes() == {}
+    assert "sem_noite" in estado["etapas"]["call"]["sem_noite"]
+    assert any(a["titulo"] == "Noite sem posição" for a in _avisos())
+    estado = _rodar("call", _cfg(), _contas(), QUINTA)  # sem a data: compra normal
+    assert estado["etapas"]["call"]["compras"] == 5
