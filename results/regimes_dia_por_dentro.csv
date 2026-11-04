@@ -1,0 +1,5 @@
+noite_do_mercado,pregao_do_mercado,dias,estrategia_bp,perna_noite_bp,perna_dia_bp,mercado_bp,fatia_dos_dias,contribuicao_bp_por_dia
+noite cai,pregão cai,1106,35.436,-67.610,134.406,-163.636,0.214,7.597
+noite cai,pregão sobe,1048,-98.046,-79.045,-121.011,30.606,0.203,-19.917
+noite sobe,pregão cai,1533,98.649,76.969,116.381,-36.007,0.297,29.314
+noite sobe,pregão sobe,1472,-11.428,78.052,-104.862,154.086,0.285,-3.261
