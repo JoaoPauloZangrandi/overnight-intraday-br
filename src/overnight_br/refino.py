@@ -63,6 +63,23 @@ ATUAL = {"sinal_noite": "n_aparada_12m", "sentido_noite": 1, "sinal_dia": "n_apa
 VERSOES = {"noite": "so_noite", "dia": "so_dia", "ambas": "noite_e_dia"}
 RESULTADOS = cotahist.RAIZ / "results"
 ARQUIVO = RESULTADOS / "refino_tentativas.csv"
+TRAVA = 0.0  # no modo recente: 0,10 (a ordem cabe em 10% do leilão de abertura estimado)
+
+
+def modo_recente() -> None:
+    """PROTOCOLO 2, FIXADO COM O JOÃO EM 03/11/2026, depois da etapa 6 (a trava de liquidez
+    mostrou que 2006-15 premia ações em que a nossa ordem não caberia no leilão): o mesmo
+    critério, mas só 2016-01 a 2024-10 (2016-20 e 2021-out/24), com a trava de 10% do leilão
+    nas DUAS pernas (o dia também vende no leilão de abertura), em todas as regras, inclusive a
+    atual. Etapas 1 a 5 rodadas de novo, ledger à parte; o limite de sorte conta tudo antes."""
+    global ESTUDO_INICIO, SUBPERIODOS, ARQUIVO, TRAVA, TENTATIVAS_ANTES
+    antes = len(pd.read_csv(ARQUIVO))
+    ESTUDO_INICIO = pd.Timestamp("2016-01-01")
+    SUBPERIODOS = {"2016-2020": ("2016-01-01", "2020-12-31"),
+                   "2021-2024": ("2021-01-01", "2024-10-31")}
+    ARQUIVO = RESULTADOS / "refino_recente_tentativas.csv"
+    TRAVA = 0.10
+    TENTATIVAS_ANTES = TENTATIVAS_ANTES + antes
 TABELA = cotahist.PROCESSADO.parent / "refino_sinais.parquet"
 MEIA_VIDA = 63  # pregões, cerca de 3 meses
 NAO_SINAIS = {"mes", "ticker", "posicao", "noites_12m"}
@@ -236,7 +253,10 @@ def nomes_dos_sinais(tab: pd.DataFrame) -> list[str]:
 def escolher(tab: pd.DataFrame, sinal: str, sentido: int, universo_n: int = 50, n: int = 5,
              peso: str = "igual", perna: str = "noite") -> pd.DataFrame:
     """(mês, ticker, peso): as n de maior sinal (sentido 1) ou de menor sinal (sentido -1) entre
-    as candidatas do universo. Com peso inverso_vol, pesa pelo inverso da volatilidade da perna."""
+    as candidatas do universo. Com peso inverso_vol, pesa pelo inverso da volatilidade da perna.
+    No modo recente (TRAVA > 0), só as que cabem no leilão de abertura (com_trava)."""
+    if TRAVA:
+        tab = com_trava(tab, TRAVA, n)
     t = tab[tab["posicao"] <= universo_n].dropna(subset=[sinal])
     t = t.sort_values(["mes", sinal], ascending=[True, sentido < 0]).groupby("mes").head(n)
     vol = t["vol_n_12m"] if perna == "noite" else t["vol_d_12m"]
@@ -696,9 +716,12 @@ def main() -> None:
         print(e.pivot(index="regra", columns="extra_bp_lado", values="pior").round(3).to_string())
         print(e[e["extra_bp_lado"] == 0].set_index("regra")[["fracao_fora_50"]].round(2).to_string())
         return
+    if "--recente" in sys.argv:
+        sys.argv.remove("--recente")
+        modo_recente()
     etapa = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     b = Base()
-    if TABELA.exists() and etapa > 1:
+    if TABELA.exists() and (etapa > 1 or TRAVA):
         tab = pd.read_parquet(TABELA)
     else:
         tab = tabela(b)
