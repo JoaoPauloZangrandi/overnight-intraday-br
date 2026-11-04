@@ -58,3 +58,26 @@ Previsão da escolha, por período (média mensal, t, meses positivos):
 Ajustar a regra olhando 2025–2026 para "fazer voltar a funcionar". Esse período já foi usado
 (a prova final está gasta); qualquer regra afinada nele vai parecer ótima no passado e não diz
 nada sobre o futuro.
+
+## As duas juntas (meio a meio)
+
+Brasil = a regra atual, noite e dia; EUA = só noite nas 50 grandes, 1 bp por lado. Cada uma pelo
+que rende acima do juro da sua moeda (CDI ou T-bill), antes do IR e sem o câmbio. Meio a meio
+fixado antes, sem otimizar.
+
+| Período | Correlação mensal | Brasil | EUA | Meio a meio |
+|---|---|---|---|---|
+| 2016–2021 | 0,15 | Sharpe 1,81, queda −16% | 1,79, −21% | **2,37**, −18% |
+| 2022–2024 | −0,08 | 2,37, −8% | 0,71, −17% | **2,29**, −4% |
+| 2025–out/2026 | **0,63** | −0,50, −14% | 1,17, −21% | 0,77, −15% |
+| 2016–out/2026 | 0,19 | 1,53, −16% | 1,28, −21% | **1,81**, −18% |
+
+- Juntas, o Sharpe sobe em 10 anos (1,81 contra 1,53 e 1,28) e a volatilidade cai (13,9% contra
+  16,7% e 19,3%).
+- Os choques só do Brasil se diluem: no Joesley Day o Brasil perdeu 12,2% e os EUA ganharam 0,2%.
+  Os choques globais pegam as duas: na Covid, 16/03/2020, −8,0% e −12,4%.
+- Em 2025–2026 a correlação subiu para 0,63 e a só noite americana ficou bem mais volátil (34% ao
+  ano, pior mês −15,8%): a diversificação foi menor justo agora.
+- Fora da conta: o câmbio (sem hedge, o real/dólar entra inteiro; com hedge no futuro de dólar, o
+  custo é a diferença de juros, e o que sobra é o que está na tabela) e o IR dos EUA (15% ao ano
+  sobre o ganho, Lei 14.754/2023).
