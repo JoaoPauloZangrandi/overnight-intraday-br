@@ -634,7 +634,9 @@ def ipca_indice() -> pd.Series:
 def com_trava(tab: pd.DataFrame, limite: float, n_noite: int) -> pd.DataFrame:
     """Só as candidatas em que a ordem da noite (capital / n, em R$ do mês pelo IPCA) cabe em
     `limite` do leilão de abertura estimado (LEILAO_SOBRE_VOLUME x volume mediano de 12m)."""
-    ordem = CAPITAL_NOITE / n_noite * ipca_indice().reindex(pd.PeriodIndex(tab["mes"])).to_numpy()
+    ipca = ipca_indice()  # mês ainda sem IPCA publicado: o último
+    ordem = CAPITAL_NOITE / n_noite * ipca.reindex(pd.PeriodIndex(tab["mes"])).fillna(
+        ipca.iloc[-1]).to_numpy()
     return tab[ordem <= limite * LEILAO_SOBRE_VOLUME * tab["volume_12m"].to_numpy()]
 
 
@@ -653,6 +655,42 @@ def etapa6(tab: pd.DataFrame, av: Avaliador) -> list[dict]:
                        "n_noite": nn, "n_dia": 5, "peso": "igual"}
                       | av.regra(en, ed, "noite_e_dia"))
     return linhas
+
+
+FINALISTAS = [  # as 3 melhores do protocolo 2 pelo pior subperíodo (b4e89eb) e a atual
+    ("1: n_media_12m / d_media_6m-, 3/3", "n_media_12m", 1, "d_media_6m", -1, 50, 3, 3, "igual"),
+    ("2: n_media_24m / d_media_6m-, 3/5", "n_media_24m", 1, "d_media_6m", -1, 50, 3, 5, "igual"),
+    ("3: n_media_12m / d_media_6m-, 3/3 inv_vol", "n_media_12m", 1, "d_media_6m", -1, 50, 3, 3,
+     "inverso_vol"),
+    ("atual", "n_aparada_12m", 1, "n_aparada_12m", 1, 50, 5, 5, "igual"),
+]
+
+
+def medir_finalistas(tab: pd.DataFrame, av: Avaliador) -> pd.DataFrame:
+    linhas = []
+    for nome, sn, en_, sd, ed_, un, nn, nd, peso in FINALISTAS:
+        en = escolher(tab, sn, en_, un, nn, peso)
+        ed = escolher(tab, sd, ed_, un, nd, peso, perna="dia")
+        d = av.componentes(en, ed)
+        s = simular(d, "noite_e_dia")
+        por_ano = {f"sharpe_{a}": decisao.sharpe_mensal(g, av.cdi_ir)
+                   for a, g in s["depois"].groupby(s.index.year)}
+        linhas.append({"regra": nome} | av.medir(d, "noite_e_dia") | por_ano)
+    return pd.DataFrame(linhas)
+
+
+def prova_final() -> None:
+    """A PROVA FINAL (nov/2024 a out/2026), aberta uma única vez com o OK do João (03/11/2026),
+    no protocolo 2 (trava de 10% nas duas pernas). Os sinais usam só o passado de cada mês."""
+    global ESTUDO_INICIO, ESTUDO_FIM, SUBPERIODOS, TRAVA
+    ESTUDO_INICIO, ESTUDO_FIM, TRAVA = PROVA_INICIO, PROVA_FIM, 0.10
+    SUBPERIODOS = {"prova": (str(PROVA_INICIO.date()), str(PROVA_FIM.date()))}
+    b = Base()
+    tab = tabela(b, PROVA_FIM.to_period("M"))
+    tab = tab[pd.PeriodIndex(tab["mes"]) >= PROVA_INICIO.to_period("M")]
+    r = medir_finalistas(tab, Avaliador(b))
+    r.to_csv(RESULTADOS / "refino_prova_final.csv", index=False, float_format="%.4f")
+    print(r.drop(columns=["pior"]).round(3).to_string(index=False))
 
 
 def estresse_custo(tab: pd.DataFrame, av: Avaliador, t: pd.DataFrame) -> pd.DataFrame:
@@ -715,6 +753,9 @@ def main() -> None:
         e.to_csv(RESULTADOS / "refino_estresse_custo.csv", index=False, float_format="%.4f")
         print(e.pivot(index="regra", columns="extra_bp_lado", values="pior").round(3).to_string())
         print(e[e["extra_bp_lado"] == 0].set_index("regra")[["fracao_fora_50"]].round(2).to_string())
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "prova":
+        prova_final()
         return
     if "--recente" in sys.argv:
         sys.argv.remove("--recente")
